@@ -1,0 +1,533 @@
+---
+title: "Descriptive Statistics"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    theme: flatly
+    highlight: haddock
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( echo=TRUE, message=FALSE, warning=FALSE, fig.width=10 )
+```
+
+# Overview
+
+For this portion of the project, we are calculating Changes in Median Home Value and Neighborhood Metrics, from 2000 to 2010.
+
+# Packages Used
+
+```{r}
+library( dplyr )
+library( knitr )
+library( pander )
+library(bannerCommenter)
+library( stargazer )
+library( here )
+library( scales )
+library( ggplot2 )
+library( ggthemes )
+library( gridExtra )
+set.seed( 1234 )
+s.type <- "text"
+```
+
+# Data
+
+For this project, we are using data from the [Longitudinal Tabulated Database (LTDB)](https://s4.ad.brown.edu/projects/diversity/Researcher/Bridging.htm)
+
+## Load and Merge Data
+
+The first step is to download data for the years 2000 and 2010 along with their metadata and combine them into one dataset.
+
+```{r}
+d1 <- readRDS( here("/data/rodeo/LTDB-2000.rds"))
+d2 <- readRDS( here("/data/rodeo/LTDB-2010.rds"))
+md <- readRDS( here("/data/rodeo/LTDB-META-DATA.rds"))
+
+d1 <- select( d1, - year )
+d2 <- select( d2, - year )
+
+d <- merge( d1, d2, by="tractid" )
+d <- merge( d, md, by="tractid" )
+```
+
+## Add Federal Data
+
+We will be pulling federal data for the [New Market Tax Credit (NMTC)](https://www.cdfifund.gov/news-events/news/Pages/news-detail.aspx?NewsID=364&Category=Press%20Releases) and [Low-Income Housing Tax Credit (LIHTC)](https://lihtc.huduser.gov/) programs to our dataset. 
+
+```{r}
+# New Market Tax Credit (NMTC) Data
+URL1 <- "https://raw.githubusercontent.com/DS4PS/cpp-528-spr-2020/master/labs/data/raw/NMTC/nmtc-sheet-01.csv"
+nmtc <- read.csv( URL1, stringsAsFactors=F )
+
+# Low-Income Housing Tax Credit (LIHTC) Data
+URL <- "https://raw.githubusercontent.com/DS4PS/cpp-528-spr-2020/master/labs/data/raw/LIHTC/LIHTCPUB.csv"
+lihtc <- read.csv( URL, stringsAsFactors=F )
+
+# remove anything not a number from the string
+d$id2 <- gsub( "[^0-9]", "", d$tractid )
+
+# fix IDs so they are match
+d$id2 <- as.numeric( d$id2 )
+```
+
+## Aggregate Federal Data
+
+Since there are multiple projects per Census tract, we need to aggregate the project data before merging into our primary dataset.
+
+```{r}
+# LIHTC:
+lihtc.dollars <-
+  lihtc %>% 
+  filter( yr_alloc >= 2000 & yr_alloc <= 2010 ) %>%
+  group_by( fips2010 ) %>%
+  summarize( num.lihtc = n(), lihtc.total = sum( allocamt, na.rm=T ) )
+
+# NMTC:
+# remove dollar sign and commas
+nmtc$amount <- gsub( "[,$]", "", nmtc$QLICI.Amount )
+# convert characters to numeric 
+nmtc$amount <- as.numeric( nmtc$amount ) %>% round(0)
+
+nmtc.dollars <- 
+  nmtc %>% 
+  filter( Origination.Year >= 2000 & Origination.Year <= 2010 ) %>%
+  group_by( X2010.Census.Tract ) %>% 
+  summarize( num.nmtc=n(), nmtc.total = sum( amount, na.rm=T ) )
+```
+
+## Merge Census and Tax Policy Data
+
+Now with the data aggregated we are able to merge into our Primary dataset.
+
+```{r}
+# Merge Datasets
+d <- merge( d, nmtc.dollars, by.x="id2", by.y="X2010.Census.Tract", all.x=T )
+d <- merge( d, lihtc.dollars, by.x="id2", by.y="fips2010", all.x=T )
+
+# recode tracts that had no grants from NA to 0
+
+d$num.nmtc[ is.na(d$num.nmtc) ] <- 0
+d$nmtc.total[ is.na(d$nmtc.total) ] <- 0
+
+d$num.lihtc[ is.na(d$num.lihtc) ] <- 0 
+d$lihtc.total[ is.na(d$lihtc.total) ] <- 0
+```
+
+## Filter for Urban Cities
+
+Again, we were interested in only urban areas, we omitted rural areas by filtering only urban tracts. We also omitted non-numeric values. We will also back-up our dataset.
+
+```{r}
+d <- filter( d, urban == "urban" )
+d.full <- d
+d <- d.full
+```
+
+## Creating New Variables
+
+Now we we have formatted our dataset, we can repeat the variable creation steps from [Part 1.2: Descriptive Analysis of Neighborhood Change](https://r-class.github.io/cpp-528-spr-2020-group-01/report-templates/2b-descriptive-analysis-of-neighborhood-change.html) to examine the impact of the tax policies.
+
+```{r}
+# adjust 2000 home values for inflation 
+mhv.00 <- d$mhmval00 * 1.28855  
+mhv.10 <- d$mhmval12
+# Median Home Value change ($) from 2000 to 2010
+mhv.change <- mhv.10 - mhv.00
+# Fliter out home values less than 10k
+mhv.00[ mhv.00 < 1000 ] <- NA
+# Median Home Value change ($) from 2000 to 2010
+mhv.growth <- 100 * ( mhv.change / mhv.00 )
+mhv.growth[ mhv.growth > 200 ] <- NA
+# Adding Variables back into Dataset
+d$mhv.00 <- mhv.00
+d$mhv.10 <- mhv.10
+d$mhv.change <- mhv.change
+d$mhv.growth <- mhv.growth
+#Calculating new proportion variables from existing variables.
+
+# Keep only variables we need
+d <- select( d, 
+             tractid, cbsa, cbsaname,            # ids / units of analysis
+             mhv.00, mhv.10, mhv.change, mhv.growth,    # home value 
+             hinc00, hu00, own00, rent00,        # ses
+             hinc12, hu10, own10, rent10,
+             empclf00, clf00, unemp00, prof00,   # employment 
+             empclf12, clf12, unemp12, prof12,
+             dpov00, npov00,                     # poverty
+             dpov12, npov12,
+             ag25up00, hs00, col00,              # education 
+             ag25up12, hs12, col12,
+             pop00.x, nhwht00, nhblk00, hisp00, asian00,   # race
+             pop10, nhwht10, nhblk10, hisp10, asian10,
+             num.nmtc, nmtc.total,              # tax policy data
+             num.lihtc, lihtc.total             # aggregated by census tract
+          ) # end select
+d <- 
+  d %>%
+  mutate( 
+          # 2000 variables
+          p.white.00 = 100 * nhwht00 / pop00.x,
+          p.black.00 = 100 * nhblk00 / pop00.x,
+          p.hisp.00 = 100 * hisp00 / pop00.x, 
+          p.asian.00 = 100 * asian00 / pop00.x,
+          p.hs.edu.00 = 100 * (hs00+col00) / ag25up00,
+          p.col.edu.00 = 100 * col00 / ag25up00,
+          p.prof.00 = 100 * prof00 / empclf00,
+          p.unemp.00 = 100 * unemp00 / clf00,
+          pov.rate.00 = 100 * npov00 / dpov00,
+          p.rent.00 = 100 * rent00 / hu00,
+          # 2010 variables
+          p.white.10 = 100 * nhwht10 / pop10,
+          p.black.10 = 100 * nhblk10 / pop10,
+          p.hisp.10 = 100 * hisp10 / pop10, 
+          p.asian.10 = 100 * asian10 / pop10,
+          p.hs.edu.10 = 100 * (hs12+col12) / ag25up12,
+          p.col.edu.10 = 100 * col12 / ag25up12,
+          p.prof.10 = 100 * prof12 / empclf12,
+          p.unemp.10 = 100 * unemp12 / clf12,
+          pov.rate.10 = 100 * npov12 / dpov12,
+          p.rent.10 = 100 * rent10 / hu10 )
+# Calculate new variables using "group_by"
+d <-
+  d %>%
+  group_by( tractid ) %>%
+  mutate( metro.mhv.pct.00 = ntile( mhv.00, 100 ),
+          metro.mhv.pct.10 = ntile( mhv.10, 100 ),
+          metro.median.pay.00 = median( hinc00, na.rm=T ),
+          metro.median.pay.10 = median( hinc12, na.rm=T ),
+          metro.diversity.rank.00 = ntile( (100-p.white.00), 100 ),
+          # metro total population 2000
+          metro.pop.total.00 = sum( pop00.x, na.rm=T ),
+          # metro total population 2010
+          metro.pop.total.10 = sum( pop10, na.rm=T ),
+          # tract rank in metro area for unemployment in 2000
+          metro.unemp.rank.00 = ntile( p.unemp.00, 100 ),
+          # tract rank in metro area for unemployment in 2010
+          metro.unemp.rank.10 = ntile( p.unemp.10, 100 ) ) %>%
+  ungroup() %>%
+  mutate( metro.mhv.pct.change = metro.mhv.pct.10 - metro.mhv.pct.00,
+          # metro population growth 2000-2010
+          metro.pop.growth =
+            ( metro.pop.total.10 - metro.pop.total.00 ) / metro.pop.total.00,
+          metro.unemp.pct.change = metro.unemp.rank.10 - metro.unemp.rank.00,
+          pay.change = metro.median.pay.10 - metro.median.pay.00,
+          race.change = p.white.10 - p.white.00,
+          pov.change = pov.rate.10 - pov.rate.00,
+          p.unemp.change = p.unemp.10 - p.unemp.00,
+          p.col.edu.change = p.col.edu.10 - p.col.edu.00,
+          p.rent.change = p.rent.10 - p.rent.00)
+
+# Create Dataset Backup
+d.full2 <- d
+d <- d.full2
+```
+
+# Descriptive Statistics for Tax Programs
+
+## Total Tax Credit Distributions
+
+The total allocation for the New Market Tax Credit (NMTC) was $18,384,794,962, dispersed to recipients of 4,778 tracts.
+
+The total allocation for the Low-Income Houseing Tax Credit (LIHTC) was $5,620,208,334, dispersed to recipients of 12,625 tracts.
+
+```{r}
+sum(d$num.nmtc)
+sum(d$nmtc.total)
+sum(d$num.lihtc)
+sum(d$lihtc.total)
+```
+
+# Comparing Recipient and Non-Recipient Tracts
+
+Economic development investments target projects that have the greatest potential to succeed, so by design these investments are allocated to locations with "high need".
+
+NMTC projects target poor communities, so the "high need" tracts which recieved the investments differ from "low need" non-recipients.
+
+The LIHTC program differs from NMTC in that affordable housing units can be built anywhere, so long as the rent cap requirement is met. In practice these investments still tend to go to poor communities, since the rent cap is close to the rent they could have received anyways. Potential profit is not lost by setting a low rent cap in higher value areas.
+
+In comparing recipiant and non-recipient tracts for both programs, we are able to determine the similarities and differences between both programs.
+
+```{r}
+# First we need to create a variable for recipient vs non-recipients tracts for both prograns:
+# NMTC:
+d$NMTC <- ifelse( d$num.nmtc > 0, "YES", "NO" )
+# LIHTC:
+d$LIHTC <- ifelse( d$num.lihtc > 0, "YES", "NO" )
+# Now we can compare recipient and non-recipient tract for our variables of interest.
+```
+
+## Median Home Value
+
+**In 2000:**
+For **NMTC recipient** tracts the average Tract Median Home Value was $146,649, while the median was $118,527.
+
+For **NMTC non-recipient** tracts the average Tract Median Home Value was $188,295, while the median was $126,407.
+
+For **LIHTC recipient** tracts the average Tract Median Home Value was $156,446, while the median was $126,407.
+
+For **LIHTC non-recipient** tracts the average Tract Median Home Value was $192,005, while the median was $159,394.
+
+```{r}
+boxup("NMTC Recipient")
+summary (d$mhv.00[ d$num.nmtc > 0 ], an.rm=T)
+boxup("NMTC Non-Recipient")
+summary (d$mhv.00[ d$num.nmtc == 0 ], an.rm=T)
+boxup("LIHTC Recipient")
+summary (d$mhv.00[ d$num.lihtc > 0 ], an.rm=T) 
+boxup("LIHTC Non-Recipient")
+summary (d$mhv.00[ d$num.lihtc == 0 ], an.rm=T) 
+```
+
+```{r}
+plot3 <- 
+  ggplot( d, aes(x=log10(mhv.00), fill=NMTC )) +
+  geom_density( alpha=0.4 ) +
+  ggtitle("2000 Median Home Value Comparison of \nRecipient and Non-Recipient Communities")
+
+plot4 <- 
+  ggplot( d, aes(x=log10(mhv.00), fill=LIHTC )) +
+  geom_density( alpha=0.4 )  +
+  ggtitle("2000 Median Home Value Comparison of \nRecipient and Non-Recipient Communities")
+
+grid.arrange( plot3, plot4, nrow = 1 )
+```
+
+## Education Level
+
+**In 2000:**
+For **NMTC recipient** tracts the average proportion of college graduates was 16.48%, while the median was 11.66%.
+
+For **NMTC non-recipient** tracts the average proportion of college graduates was 25.94%, while the median was 21.45%.
+
+For **LIHTC recipient** tracts the average proportion of college graduates was 19.43%, while the median was 15.22%.
+
+For **LIHTC non-recipient** tracts the average proportion of college graduates was 26.67%, while the median was 22.23%.
+
+```{r}
+boxup("NMTC Recipient")
+summary (d$p.col.edu.00[ d$num.nmtc > 0 ], an.rm=T)
+boxup("NMTC Non-Recipient")
+summary (d$p.col.edu.00[ d$num.nmtc == 0 ], an.rm=T)
+boxup("LIHTC Recipient")
+summary (d$p.col.edu.00[ d$num.lihtc > 0 ], an.rm=T) 
+boxup("LIHTC Non-Recipient")
+summary (d$p.col.edu.00[ d$num.lihtc == 0 ], an.rm=T) 
+```
+
+```{r}
+plot1 <-
+  ggplot( d, aes(x=p.col.edu.00, fill=NMTC )) +
+  geom_density(alpha=0.4) + 
+  ggtitle("2000 College Education Rate Comparison of \nRecipient and Non-Recipient Communities")
+
+plot2 <-
+  ggplot( d, aes(x=p.col.edu.00, fill=LIHTC)) +
+  geom_density(alpha=0.4) +
+  ggtitle("2000 College Education Rate Comparison of \nRecipient and Non-Recipient Communities")
+
+grid.arrange( plot1, plot2, nrow = 1 )
+```
+
+## Poverty Rate
+
+**In 2000:**
+For **NMTC recipient** tracts the average poverty rate was 27.49%, while the median was 26.13%.
+
+For **NMTC non-recipient** tracts the average poverty rate was 11.97%, while the median was 8.24%.
+
+For **LIHTC recipient** tracts the average poverty rate was 19.44%, while the median was 15.92%.
+
+For **LIHTC non-recipient** tracts the average poverty rate was 11.29%, while the median was 7.79%.     
+
+```{r}
+boxup("NMTC Recipient")
+summary (d$pov.rate.00[ d$num.nmtc > 0 ], an.rm=T)
+boxup("NMTC Non-Recipient")
+summary (d$pov.rate.00[ d$num.nmtc == 0 ], an.rm=T)
+boxup("LIHTC Recipient")
+summary (d$pov.rate.00[ d$num.lihtc > 0 ], an.rm=T) 
+boxup("LIHTC Non-Recipient")
+summary (d$pov.rate.00[ d$num.lihtc == 0 ], an.rm=T) 
+```
+
+```{r}
+plot1 <-
+  ggplot( d, aes(x=pov.rate.00, fill=NMTC )) +
+  geom_density(alpha=0.4) + 
+  ggtitle("2000 Poverty Rate Comparison of \nRecipient and Non-Recipient Communities")
+
+plot2 <-
+  ggplot( d, aes(x=pov.rate.00, fill=LIHTC)) +
+  geom_density(alpha=0.4) +
+  ggtitle("2000 Poverty Rate Comparison of \nRecipient and Non-Recipient Communities")
+
+grid.arrange( plot1, plot2, nrow = 1 )
+```
+
+## Unemployment Rate
+
+**In 2000:**
+For **NMTC recipient** tracts the average unemployment rate was 12.04%, while the median was 10.21%.
+
+For **NMTC non-recipient** tracts the average unemployment rate was 6.06%, while the median was 4.50%.
+
+For **LIHTC recipient** tracts the average unemployment rate was 8.75%, while the median was 6.60%.
+
+For **LIHTC non-recipient** tracts the average unemployment rate was 5.83%, while the median was 4.38%. 
+
+```{r}
+boxup("NMTC Recipient")
+summary (d$p.unemp.00[ d$num.nmtc > 0 ], an.rm=T)
+boxup("NMTC Non-Recipient")
+summary (d$p.unemp.00[ d$num.nmtc == 0 ], an.rm=T)
+boxup("LIHTC Recipient")
+summary (d$p.unemp.00[ d$num.lihtc > 0 ], an.rm=T) 
+boxup("LIHTC Non-Recipient")
+summary (d$p.unemp.00[ d$num.lihtc == 0 ], an.rm=T) 
+```          
+
+```{r}
+plot1 <-
+  ggplot( d, aes(x=p.unemp.00, fill=NMTC )) +
+  geom_density(alpha=0.4) + 
+  ggtitle("2000 Unemployment Rate Comparison of \nRecipient and Non-Recipient Communities")
+
+plot2 <-
+  ggplot( d, aes(x=p.unemp.00, fill=LIHTC)) +
+  geom_density(alpha=0.4) +
+  ggtitle("2000 Unemployment Rate Comparison of \nRecipient and Non-Recipient Communities")
+
+grid.arrange( plot1, plot2, nrow = 1 )
+```
+
+## Proportion Renters
+
+**In 2000:**
+For **NMTC recipient** tracts the average proportion of renters was 57.14%, while the median was 58.27%.
+
+For **NMTC non-recipient** tracts the average proportion of renters was 31.76%, while the median was 26.70%.
+
+For **LIHTC recipient** tracts the average proportion of renters was 44.19%, while the median was 42.03%.
+
+For **LIHTC non-recipient** tracts the average proportion of renters was 30.61%, while the median was 25.19%. 
+
+```{r}
+boxup("NMTC Recipient")
+summary (d$p.rent.00[ d$num.nmtc > 0 ], an.rm=T)
+boxup("NMTC Non-Recipient")
+summary (d$p.rent.00[ d$num.nmtc == 0 ], an.rm=T)
+boxup("LIHTC Recipient")
+summary (d$p.rent.00[ d$num.lihtc > 0 ], an.rm=T) 
+boxup("LIHTC Non-Recipient")
+summary (d$p.rent.00[ d$num.lihtc == 0 ], an.rm=T) 
+```          
+
+```{r}
+plot1 <-
+  ggplot( d, aes(x=p.rent.00, fill=NMTC )) +
+  geom_density(alpha=0.4) + 
+  ggtitle("2000 Proportion Renters Comparison of \nRecipient and Non-Recipient Communities")
+
+plot2 <-
+  ggplot( d, aes(x=p.rent.00, fill=LIHTC)) +
+  geom_density(alpha=0.4) +
+  ggtitle("2000 Proportion Renters Comparison of \nRecipient and Non-Recipient Communities")
+
+grid.arrange( plot1, plot2, nrow = 1 )
+```
+
+## Median Income
+
+**In 2000:**
+For **NMTC recipient** tracts the average Tract Median Income was $27,688, while the median was $26,919.
+
+For **NMTC non-recipient** tracts the average Tract Median Income was $48,244, while the median was $44,523.
+
+For **LIHTC recipient** tracts the average Tract Median Income was $36,642, while the median was $33,697.
+
+For **LIHTC non-recipient** tracts the average Tract Median Income was $49,413, while the median was $45,383. 
+
+```{r}
+boxup("NMTC Recipient")
+summary (d$metro.median.pay.00[ d$num.nmtc > 0 ], an.rm=T)
+boxup("NMTC Non-Recipient")
+summary (d$metro.median.pay.00[ d$num.nmtc == 0 ], an.rm=T)
+boxup("LIHTC Recipient")
+summary (d$metro.median.pay.00[ d$num.lihtc > 0 ], an.rm=T) 
+boxup("LIHTC Non-Recipient")
+summary (d$metro.median.pay.00[ d$num.lihtc == 0 ], an.rm=T) 
+```          
+
+```{r}
+plot3 <- 
+  ggplot( d, aes(x=log10(metro.median.pay.00), fill=NMTC )) +
+  geom_density( alpha=0.4 ) +
+  ggtitle("2000 Median Income Comparison of \nRecipient and Non-Recipient Communities")
+
+plot4 <- 
+  ggplot( d, aes(x=log10(metro.median.pay.00), fill=LIHTC )) +
+  geom_density( alpha=0.4 )  +
+  ggtitle("2000 Median Income Comparison of \nRecipient and Non-Recipient Communities")
+
+grid.arrange( plot3, plot4, nrow = 1 )
+```
+
+# Median Home Value Growth (%)
+
+**In 2000:**
+For **NMTC recipient** tracts the average growth rate of Median Home Value was 39.60%, while the median was 33.36%.
+
+For **NMTC non-recipient** tracts the average growth rate of Median Home Value was 29.18%, while the median was 24.83%.
+
+For **LIHTC recipient** tracts the average growth rate of Median Home Value was 29.89%, while the median was 23.03%.
+
+For **LIHTC non-recipient** tracts the average growth rate of Median Home Value was 29.40%, while the median was 25.33%. 
+
+```{r}
+boxup("NMTC Recipient")
+summary (d$mhv.growth[ d$num.nmtc > 0 ], an.rm=T)
+boxup("NMTC Non-Recipient")
+summary (d$mhv.growth[ d$num.nmtc == 0 ], an.rm=T)
+boxup("LIHTC Recipient")
+summary (d$mhv.growth[ d$num.lihtc > 0 ], an.rm=T) 
+boxup("LIHTC Non-Recipient")
+summary (d$mhv.growth[ d$num.lihtc == 0 ], an.rm=T) 
+``` 
+
+```{r}
+p5 <- 
+  ggplot( d, aes(x=mhv.growth, fill=LIHTC )) +
+  geom_density( alpha=0.4 )  +
+  ggtitle("Comparision of MHV Growth 2000 to 2010: \nRecipients vs Non-Recipients")
+
+p6 <- 
+ggplot( d, aes(x=mhv.growth, fill=NMTC )) +
+  geom_density( alpha=0.4 )  +
+  ggtitle("Comparision of MHV Growth 2000 to 2010: \nRecipients vs Non-Recipients") 
+
+grid.arrange( p5, p6, nrow = 1 )
+```
+
+# References
+
+[Community Development Financial Institutions Fund. (2019). CDFI Fund releases summary report and public data for NMTC program for FYs 2003-2017. U.S. Department of the Treasury. (April 30, 2020). https://www.cdfifund.gov/news-events/news/Pages/news-detail.aspx?NewsID=364&Category=Press%20Releases](https://www.cdfifund.gov/news-events/news/Pages/news-detail.aspx?NewsID=364&Category=Press%20Releases)
+
+[Data Sciences for Public Service. (2020). Data Sciences III: Lab 06 tutorial. Arizona State University MS in Program Evaluation & Data Analytics. (April 26, 2020). https://ds4ps.org/cpp-528-spr-2020/labs/lab-06-tutorial.html](https://ds4ps.org/cpp-528-spr-2020/labs/lab-06-tutorial.html)
+
+[U.S. Department of Housing and Urban Development. (2019). LIHTC database access. U.S. Department of Housing and Urban Development.. (April 30, 2020). https://lihtc.huduser.gov/](https://lihtc.huduser.gov/)
+
+[Novogradac Company LLP. (2016). About the LIHTC. Novogradac Company LLP. (April 30, 2020). www.novoco.com/resource-centers/affordable-housing-tax-credits/lihtc-basics/about-lihtc](www.novoco.com/resource-centers/affordable-housing-tax-credits/lihtc-basics/about-lihtc)
+
+-------
+<br>
+
+Analysis Created By: Group 1: Ricky Duran, Jason Eastman, & Katie Gentry
+For: CPP 528 - Data Sciences for Public Service III (Spring 2020)
+Created On: "`r format(Sys.time(), '%B %d, %Y')`"
+
+<br>

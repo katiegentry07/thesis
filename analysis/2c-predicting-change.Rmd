@@ -1,0 +1,344 @@
+---
+title: "Predicting Change"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    theme: flatly
+    highlight: haddock
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( echo=TRUE, message=FALSE, warning=FALSE, fig.width=10 )
+```
+
+```{r, include=FALSE}
+# Libraries
+library( dplyr )       # data wrangling
+library( knitr )
+library( stargazer )
+library( scales )
+library( geojsonio )   # read shapefiles
+library( sp )          # work with shapefiles
+library( sf )          # work with shapefiles - simple features format
+library( mclust )      # cluster analysis 
+library( tmap )        # theme maps
+library( ggplot2 )     # graphing 
+library( ggthemes )    # nice formats for ggplots
+library( pander )      # formatting RMD tables
+library( tidycensus )
+library( cartogram )  # spatial maps w/ tract size bias reduction
+library( maptools )   # spatial object manipulation 
+library(gridExtra)
+library( here )
+
+source("apikey.R")
+census_api_key(api_key)
+
+s.type <- "html"
+```
+
+# Predicting Change Based on 2000 Neighborhood Characteristics
+
+By analyzing specific 2000 census data, we can predict gentrification within neighborhoods. First we must establish what consists of a neighborhood that can be a candidate for gentrification. The two variables used to identify these candidates were:
+
+- ***Poverty in higher than normal rate:*** By finding tracts showing a poverty rate that lies higher than the 75% percentile for all urban cities, we can say that tract might have potnential for gentrification.
+
+- ***Median income for metros less than normal rate:*** By finding tracts that have a median income less than the median for the urban cities ($38,586), we can speculate that the tract might have potential for gentrification.
+
+Next, we need to establish which factors signify whether a neighborhood has been gentrified. The following variables were used for this process:
+
+- ***Less Uneducated:*** We look for neighborhoods that show a decrease in uneducated people as a signal for gentrification.
+
+- ***Less Poverty:*** We look at neighborhoods that show a decrease in poverty in the ten year span as an indicator for gnetrification.
+
+- ***Less Unemployed:*** We look for areas that show a decrease in unemployment showing possible gentrification.
+
+- ***Less Renters:*** We look at tracts that have a decrease in renters, singifying that people are more likely moving into housing units instead, showing possible gentrification.
+
+- ***More Money:*** Finally, we look at city-wide values for cities that show an increase in income.
+
+Now that we have variables to address both neighborhoods that are candidates for gentrification and neighrbohoods that have been gnetrified, we can start our coding process.
+
+## Load and Merge Data
+
+With those variables in mind, we begin our process of analyzing the data. The first step is to download data for the years 2000 and 2010 along with their metadata and combine them into one dataset.
+
+```{r}
+# Load data
+data_2000 <- readRDS( here("data/rodeo/LTDB-2000.rds" ))
+data_2010 <- readRDS( here("data/rodeo/LTDB-2010.rds" ))
+meta_data <- readRDS( here("data/rodeo/LTDB-META-DATA.rds" ))
+
+data_2000 <- select( data_2000, - year )
+data_2010 <- select( data_2010, - year )
+
+# Merge 2000 and 2010 data and Metadata
+merged_data <- merge( data_2000, data_2010, by="tractid" )
+merged_data <- merge( merged_data, meta_data, by="tractid" )
+```
+
+## Filter for Urban cities
+
+Since we're interested in urban areas, we filter the data for only urban tracts.
+
+```{r}
+# Filter for Urban cities
+data_urban <- filter (merged_data, urban == "urban")
+```
+
+## Create and Adjust Median Home Value data
+
+Next, we'll make some quick calcuations and adjustments to the Median Home Value data. First, we'll adjust the 2000 Median Home Value for inflation. Next we'll find the change between the two years, following up with the percent change as well. Finally, we add those values back into the dataset.
+
+```{r}
+# adjust 2000 home values for inflation 
+mhv.00 <- data_urban$mhmval00 * 1.28855  
+mhv.10 <- data_urban$mhmval12
+
+# find Median Home Value change from 2000 to 2010
+mhv.change <- mhv.10 - mhv.00
+
+# Fliter out home values less than 10k
+mhv.00[ mhv.00 < 1000 ] <- NA
+pct.change <- 100 * ( mhv.change / mhv.00 )
+
+#Add variables back into dataset
+data_urban$mhv.00 <- mhv.00
+data_urban$mhv.10 <- mhv.10
+data_urban$mhv.change <- mhv.change
+data_urban$pct.change <- pct.change
+```
+
+## Calculate Statistical Variables
+
+Here's where we calculate new variables of interest based on our daata. We start by creating percentage variables for a variety of data including race, employment, education, and rent. Next, we create metro-wide variables along with percent change of a variable for the ten year span. finally, we clean up the dataset a bit, by keeping only the variables we want to look at.
+
+```{r}
+# Calculate new variables
+data_urban <- 
+  data_urban %>%
+  mutate( 
+          # 2000 variables
+          p.white.00 = 100 * nhwht00 / pop00.x,
+          p.black.00 = 100 * nhblk00 / pop00.x,
+          p.hisp.00 = 100 * hisp00 / pop00.x, 
+          p.asian.00 = 100 * asian00 / pop00.x,
+          p.col.edu.00 = 100 * col00 / ag25up00,
+          p.prof.00 = 100 * prof00 / empclf00,
+          p.unemp.00 = 100 * unemp00 / clf00,
+          pov.rate.00 = 100 * npov00 / dpov00,
+          p.rent.00 = 100 * rent00 / hu00,
+
+          # 2010 variables
+          p.white.10 = 100 * nhwht10 / pop10,
+          p.black.10 = 100 * nhblk10 / pop10,
+          p.hisp.10 = 100 * hisp10 / pop10, 
+          p.asian.10 = 100 * asian10 / pop10,
+          p.col.edu.10 = 100 * col12 / ag25up12,
+          p.prof.10 = 100 * prof12 / empclf12,
+          p.unemp.10 = 100 * unemp12 / clf12,
+          pov.rate.10 = 100 * npov12 / dpov12,
+          p.rent.10 = 100 * rent10 / hu10 )
+
+# inflation adjust income 
+data_urban$hinc00 <- 1.28855 * data_urban$hinc00
+
+# Calculate new variables using "group_by"
+data_urban <-
+  data_urban %>%
+  group_by( cbsaname ) %>%
+  mutate( metro.mhv.pct.00 = ntile( mhv.00, 100 ),
+          metro.mhv.pct.10 = ntile( mhv.10, 100 ),
+          metro.median.pay.00 = median( hinc00, na.rm=T ),
+          metro.median.pay.10 = median( hinc12, na.rm=T ),
+          metro.diversity.rank.00 = ntile( (100-p.white.00), 100 ),
+          # metro total population 2000
+          metro.pop.total.00 = sum( pop00.x, na.rm=T ),
+          # metro total population 2010
+          metro.pop.total.10 = sum( pop10, na.rm=T ),
+          # tract rank in metro area for unemployment in 2000
+          metro.unemp.rank.00 = ntile( p.unemp.00, 100 ),
+          # tract rank in metro area for unemployment in 2010
+          metro.unemp.rank.10 = ntile( p.unemp.10, 100 ) ) %>%
+  ungroup() %>%
+  mutate( metro.mhv.pctile.change = metro.mhv.pct.10 - metro.mhv.pct.00,
+          # metro population growth 2000-2010
+          metro.pop.growth =
+            ( metro.pop.total.10 - metro.pop.total.00 ) / metro.pop.total.00,
+          metro.unemp.pctile.change = metro.unemp.rank.10 - metro.unemp.rank.00,
+          pay.change = metro.median.pay.10 - metro.median.pay.00,
+          race.change = p.white.10 - p.white.00,
+          pov.change = pov.rate.10 - pov.rate.00,
+          p.unemp.change = p.unemp.10 - p.unemp.00,
+          p.col.edu.change = p.col.edu.10 - p.col.edu.00,
+          p.rent.change = p.rent.10 - p.rent.00)
+
+# Keep only variables we need
+data_urban <-           
+  data_urban %>%
+  select( c( "tractid", "cbsa", "cbsaname",
+          "mhv.00", "mhv.10", "mhv.change","pct.change",
+          "p.white.00", "p.black.00", "p.hisp.00", "p.asian.00", 
+          "p.col.edu.00", "p.prof.00",  "p.unemp.00", "pov.rate.00",
+          "metro.mhv.pct.00", "metro.median.pay.00", "metro.pop.total.00",
+          "metro.unemp.pctile.change", "metro.unemp.rank.00",
+          "metro.pop.growth", "metro.mhv.pctile.change", "pay.change", "race.change",
+          "metro.diversity.rank.00", "pov.change", "p.unemp.change",
+          "p.col.edu.change", "p.rent.change"
+          #"metro.mhv.pct.10", "metro.median.pay.10", "metro.pop.total.10",
+          #"p.white.10", "p.black.10", "p.hisp.10", "p.asian.10",
+          #"p.hs.edu.10", "p.col.edu.10", "p.prof.10",
+          #"p.unemp.10", "pov.rate.10", "metro.unemp.rank.10"
+          ) ) 
+
+```
+
+**Back up our new Dataset.**
+
+```{r}
+# Back up your data just in case
+data_master <- data_urban
+```
+
+## Create data for Candidates and Gentrified Neighborhoods
+
+Finally, we can analyze which neighborhooods are good candidates for gentrification while at the same time, figure out which of those neighborhoods were gentrified in the ten year span. First, we'll create logic variables signifying whether that neighborhood reached a certain threshold. Those logic variables are none other than the variables detailed above when deciding on factors. With those created, we filter the dataset for candidates and of those candidates who were gentirified.
+
+```{r}
+# education status
+# unemployment
+# poverty
+# median income
+# % renters
+
+data_urban <- data_master
+
+# proportion of college educated increased by 3 percent
+less.uneducated <- data_urban$p.col.edu.change > 3 
+
+# proportion of unemployment decreased by 3 percent
+less.unemployed <- data_urban$p.unemp.change > -3 
+
+# proportion of poverty decreased by 3 percent
+less.poverty <- data_urban$pov.change > -3 
+
+# proportion of renters decreased
+less.renters <- data_urban$p.rent.change < 0
+
+# median income increased
+more.money <- data_urban$pay.change > 0
+
+# poverty in higher than normal rate
+poor.2000 <- data_urban$pov.rate.00 > 9 
+
+# median income for metros less than normal rate
+income.2000 <- data_urban$metro.median.pay.00 < 38586
+
+# Create logic variables that signify what were looking for
+poor.and.income <- poor.2000 & income.2000
+g.flag <- poor.2000 & income.2000 & less.uneducated & less.poverty & less.unemployed & less.renters & more.money
+
+# Create subsets of the candidates and the gnetrified tracts
+data_cand <- data_urban[poor.and.income,]
+data_gentrified <- data_urban[g.flag,]
+
+# Add up how many candidates and how many gentirfied tracts
+num.candidates <-  sum( poor.and.income, na.rm=T )
+num.gentrified <- sum( g.flag, na.rm=T )
+```
+
+# Demographics of the Candidate Neighborhoods
+
+Whew, we did it! With our new claculations, let's first look at a summary of the candidates below, giving us the demographics. Looking at the Statistics below, we can see that the demographics for neighborhood candidates of gentirifcation give us a wide variety of values. Some highlights include a low Median Home Value (less than \$100,000) which is emphasized in the metro-wide Median Home Value Percentile (mean is only 38%), a low mean percentage of College Educated (16%) and Professionally Employed people (25%),a low mean Pay Rate (\$34,677), and a high mean Poverty Rate (21%).
+
+```{r, results="asis"}
+data_cand <- data.frame(data_cand)
+stargazer( data_cand, 
+           type=s.type, 
+           digits=0, 
+           summary.stat = c("min", "p25","median","mean","p75","max") )
+```
+
+# Neighborhood Health Metrics
+
+Now let's look at a statistical summary of the gentrified neighborhoods, focusing on the health metrics we chose to determine whether a neighborhood was gentrified. There was a 8% growth in College Educated people, much larger compared to just a 3% growth for all candidates. Although the mean for percent change in unemployment did not move much (from a 3% within Candidates to a 5% of Gentrified areas), we see that the minimum and maximum has shortenened, giving a smaller range of change. Looking at the change in Poverty, we find it was quite similar to Unemployment, with neglegent change in mean, but a much lower range of percentage in gentrified areas than the candidates. Looking the increase of Rent, we see that the Candidates actually have a positive mean (2%), while the actual gentrified neighborhoods have a negative mean (-4%) which is what we were looking for. Surpringly, when we look at our final health metric, Pay Change, we see that there was not change at all between Candidates and those Gentrified.
+
+```{r, results="asis"}
+data_gentrified <- data.frame(data_gentrified)
+stargazer( data_gentrified, 
+           type=s.type, 
+           digits=0, 
+           summary.stat = c("min", "p25","median","mean","p75","max") )
+```
+
+Over all, of the 8,773 Candidates, 8% were genetrified based on this model.
+
+```{r}
+num.candidates
+
+num.gentrified / num.candidates
+```
+
+# Sample Map of Phoenix, AZ
+
+Now let's take a closer look at Phoenix, Arizona using maps. First, we need to load Phoenix's spacial data.
+
+```{r}
+# we have phoenix already packaged and on GitHub for easy load: 
+github.url <- "https://raw.githubusercontent.com/DS4PS/cpp-529-master/master/data/phx_dorling.geojson"
+phx <- geojson_read( x=github.url,  what="sp" )
+```
+
+Then we merge our calculated data with the Phoenix data. 
+
+```{r}
+data2 <- data_master
+# create small dataframe for the merge
+df1 <- data.frame( data2 )
+
+# create GEOID that matches GIS format
+
+# create a geoID for merging by tract 
+df1$GEOID <- substr( df1$tractid, 6, 18 )  # extract codes
+df1$GEOID <- gsub( "-", "", df1$GEOID )    # remove hyphens
+
+phx1 <- merge( phx, df1, by.x="GEOID", by.y="GEOID" )
+```
+
+Finally, we print out a few maps to compare. The following maps explore Median Home Value Percent Change, College Educated Percent Change, Unemployment Percent Change, Percent white People Change, Poverty Percent Change, and Rent Percent Change. Looking at the maps side-by-side, we can visually see a trend with the colors. Using the map that shows Median Home Value percent Change as a basis, all the other maps show a similar trend in color scheme. this shows, that our Neighborhood Health Metrics match with Home Growth to a degree.
+
+The distribution of homes with higher values are located in Paradise Valley, Scottsdale, Gilbert, Chandler, and Ahwatukee. The lower priced value homes are located in West Phoenix, Glendale, and Mesa which is to be expected. The largest gains occur in Central Phoenix including Arcadia, Tempe, and North Phoenix. These homes were average in 2000 but had significant gains.
+
+```{r}
+phx1 <- spTransform( phx1, CRS("+init=epsg:3395") )
+
+bb <- st_bbox( c( xmin = -12519146, xmax = -12421368, 
+                 ymax = 3965924, ymin = 3899074 ), 
+               crs = st_crs("+init=epsg:3395")) 
+
+tmap1 <-
+  tm_shape( phx1, bbox=bb ) + 
+  tm_polygons( col=c("pct.change","p.col.edu.change", 
+                     "p.unemp.change","race.change",
+                     "pov.change", "p.rent.change"),
+               n=6, ncol=2, style="quantile", palette="Spectral" ) +
+  tm_layout( "Dorling Cartogram", title.position=c("right","top"), legend.position = c("left", "bottom") )
+
+tmap1
+```
+
+-------
+<br>
+
+Analysis Created By: Group 1: Ricky Duran, Jason Eastman, & Katie Gentry
+For: CPP 528 - Data Sciences for Public Service III (Spring 2020)
+Created On: "`r format(Sys.time(), '%B %d, %Y')`"
+
+<br>
+
+
+
+

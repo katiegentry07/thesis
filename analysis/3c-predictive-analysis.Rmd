@@ -1,0 +1,365 @@
+---
+title: "Predictive Analysis"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    theme: flatly
+    highlight: haddock
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( echo=TRUE, message=FALSE, warning=FALSE, fig.width=10 )
+```
+
+# Predictive Analysis
+
+Using the New Market Tax Credits and Low Income Tax Credits, we can also run some predictive analysis on Median Home Value and Growth. First, we'll want to get the data ready for analysis.
+
+## Libraries
+
+Here are the libraries to be used in the process. 
+
+```{r}
+library( dplyr )
+library( knitr )
+library( pander )
+library( stargazer )
+library( scales )
+library( ggplot2 )
+library( gridExtra )
+library( here )
+
+set.seed( 1234 )
+
+s.type <- "html"
+```
+
+## Load and Merge Datasets
+
+Census data from 2000 and 2010 are downloaded along with its metadata. Then the data is merged into one datset. the IDs are also updated to match the fed IDs.
+
+```{r}
+census_2000 <- readRDS( here("data/rodeo/LTDB-2000.rds" ))
+census_2010 <- readRDS( here("data/rodeo/LTDB-2010.rds" ))
+meta_data <- readRDS( here("data/rodeo/LTDB-META-DATA.rds" ))
+
+census_2000 <- select( census_2000, - year )
+census_2010 <- select( census_2010, - year )
+
+merged_census <- merge( census_2000, census_2010, by="tractid" )
+merged_census <- merge( merged_census, meta_data, by="tractid" )
+
+# remove anything not a number from the string
+merged_census$id2 <- gsub( "[^0-9]", "", merged_census$tractid )
+
+# fix IDs so they are match to fed data
+merged_census$id2 <- as.numeric( merged_census$id2 )
+```
+
+## Add Federal Data
+
+Both NMTC and LIHTC data is downloaded.
+
+```{r}
+URL1 <- "https://raw.githubusercontent.com/DS4PS/cpp-528-spr-2020/master/labs/data/raw/NMTC/nmtc-sheet-01.csv"
+nmtc <- read.csv( URL1, stringsAsFactors=F )
+
+URL <- "https://raw.githubusercontent.com/DS4PS/cpp-528-spr-2020/master/labs/data/raw/LIHTC/LIHTCPUB.csv"
+lihtc <- read.csv( URL, stringsAsFactors=F )
+```
+
+# Aggregate Credits Given Between 2000 and 2010
+
+```{r}
+# LIHTC
+lihtc.dollars <-
+  lihtc %>% 
+  filter( yr_alloc >= 2000 & yr_alloc <= 2010 ) %>%
+  group_by( fips2010 ) %>%
+  summarize( num.lihtc = n(), lihtc.total = sum( allocamt, na.rm=T ) )
+
+# NMTC
+# need to convert from currency to numeric
+# current format: 
+# head( nmtc$QLICI.Amount )
+# [1] "$300,000.00 "   "$1,008,750.00 " "$977,000.00 "
+
+# remove dollar sign and commas
+nmtc$amount <- gsub( "[,$]", "", nmtc$QLICI.Amount )
+
+# head(  nmtc$amount  )
+# "300000.00 "  "1008750.00 " "977000.00 "
+
+# convert characters to numeric 
+nmtc$amount <- as.numeric( nmtc$amount ) %>% round(0)
+
+# head(  nmtc$amount  )
+# [1]  300000 1008750  977000
+
+nmtc.dollars <- 
+  nmtc %>% 
+  filter( Origination.Year >= 2000 & Origination.Year <= 2010 ) %>%
+  group_by( X2010.Census.Tract ) %>% 
+  summarize( num.nmtc=n(), nmtc.total = sum( amount, na.rm=T ) )
+```
+
+## Merge Census and Tax Policy Data
+
+```{r}
+merged_census <- merge( merged_census, nmtc.dollars, by.x="id2", by.y="X2010.Census.Tract", all.x=T )
+merged_census <- merge( merged_census, lihtc.dollars, by.x="id2", by.y="fips2010", all.x=T )
+
+# recode tracts that had no grants from NA to 0
+
+merged_census$num.nmtc[ is.na(merged_census$num.nmtc) ] <- 0
+merged_census$nmtc.total[ is.na(merged_census$nmtc.total) ] <- 0
+
+merged_census$num.lihtc[ is.na(merged_census$num.lihtc) ] <- 0 
+merged_census$lihtc.total[ is.na(merged_census$lihtc.total) ] <- 0
+```
+
+## Remove Rural Districts
+
+```{r}
+data_urban <- filter( merged_census, urban == "urban" )
+```
+
+## Calculate Median Home Value Variables
+
+```{r}
+# adjust 2000 home values for inflation 
+mhv.00 <- data_urban$mhmval00 * 1.28855  
+mhv.10 <- data_urban$mhmval12
+
+# find Median Home Value change from 2000 to 2010
+mhv.change <- mhv.10 - mhv.00
+
+# Fliter out home values less than 10k
+mhv.00[ mhv.00 < 1000 ] <- NA
+pct.change <- 100 * ( mhv.change / mhv.00 )
+
+#Add variables back into dataset
+data_urban$mhv.00 <- mhv.00
+data_urban$mhv.10 <- mhv.10
+data_urban$mhv.change <- mhv.change
+data_urban$pct.change <- pct.change
+```
+
+## Calculate New Statistical Variables
+
+Here is where new variables are calculated. These variables include many percentages and changes between 2000 and 2010. The dataset is also grouped to create metro-wide variables as well.
+
+```{r}
+# Calculate new variables
+data_urban <- 
+  data_urban %>%
+  mutate( 
+          # 2000 variables
+          p.white.00 = 100 * nhwht00 / pop00.x,
+          p.black.00 = 100 * nhblk00 / pop00.x,
+          p.hisp.00 = 100 * hisp00 / pop00.x, 
+          p.asian.00 = 100 * asian00 / pop00.x,
+          p.col.edu.00 = 100 * col00 / ag25up00,
+          p.prof.00 = 100 * prof00 / empclf00,
+          p.unemp.00 = 100 * unemp00 / clf00,
+          pov.rate.00 = 100 * npov00 / dpov00,
+          p.rent.00 = 100 * rent00 / hu00,
+          p.selfemp.00 = 100 * semp00 / empclf00,
+
+          # 2010 variables
+          p.white.10 = 100 * nhwht10 / pop10,
+          p.black.10 = 100 * nhblk10 / pop10,
+          p.hisp.10 = 100 * hisp10 / pop10, 
+          p.asian.10 = 100 * asian10 / pop10,
+          p.col.edu.10 = 100 * col12 / ag25up12,
+          p.prof.10 = 100 * prof12 / empclf12,
+          p.unemp.10 = 100 * unemp12 / clf12,
+          pov.rate.10 = 100 * npov12 / dpov12,
+          p.rent.10 = 100 * rent10 / hu10,
+          p.selfemp.10 = 100 * semp12 / empclf12)
+
+# inflation adjust income 
+data_urban$hinc00 <- 1.28855 * data_urban$hinc00
+
+# Calculate new variables using "group_by"
+data_urban <-
+  data_urban %>%
+  group_by( cbsaname ) %>%
+  mutate( metro.mhv.pct.00 = ntile( mhv.00, 100 ),
+          metro.mhv.pct.10 = ntile( mhv.10, 100 ),
+          metro.median.pay.00 = median( hinc00, na.rm=T ),
+          metro.median.pay.10 = median( hinc12, na.rm=T ),
+          metro.diversity.rank.00 = ntile( (100-p.white.00), 100 ),
+          # metro total population 2000
+          metro.pop.total.00 = sum( pop00.x, na.rm=T ),
+          # metro total population 2010
+          metro.pop.total.10 = sum( pop10, na.rm=T ),
+          # tract rank in metro area for unemployment in 2000
+          metro.unemp.rank.00 = ntile( p.unemp.00, 100 ),
+          # tract rank in metro area for unemployment in 2010
+          metro.unemp.rank.10 = ntile( p.unemp.10, 100 ) ) %>%
+  ungroup() %>%
+  mutate( metro.mhv.pct.change = metro.mhv.pct.10 - metro.mhv.pct.00,
+          # metro population growth 2000-2010
+          metro.pop.growth =
+            ( metro.pop.total.10 - metro.pop.total.00 ) / metro.pop.total.00,
+          metro.unemp.pct.change = metro.unemp.rank.10 - metro.unemp.rank.00,
+          pay.change = metro.median.pay.10 - metro.median.pay.00,
+          race.change = p.white.10 - p.white.00,
+          pov.change = pov.rate.10 - pov.rate.00,
+          p.unemp.change = p.unemp.10 - p.unemp.00,
+          p.col.edu.change = p.col.edu.10 - p.col.edu.00,
+          p.rent.change = p.rent.10 - p.rent.00,
+          # increase in the proportion of self-employed in tract 
+          increase.p.selfemp = p.selfemp.10 - p.selfemp.00)
+
+# Keep only variables we need
+data_urban <-           
+  data_urban %>%
+  select( c( "tractid", "cbsa", "cbsaname",
+          "mhv.00", "mhv.10", "mhv.change","pct.change",
+          "p.white.00", "p.black.00", "p.hisp.00", "p.asian.00", 
+          "p.col.edu.00", "p.prof.00",  "p.unemp.00", "pov.rate.00",
+          "metro.mhv.pct.00", "metro.median.pay.00", "metro.pop.total.00",
+          "metro.unemp.pct.change", "metro.unemp.rank.00",
+          "metro.pop.growth", "metro.mhv.pct.change", "pay.change", "race.change",
+          "metro.diversity.rank.00", "pov.change", "p.unemp.change",
+          "p.col.edu.change", "p.rent.change",
+          "metro.mhv.pct.10", "metro.median.pay.10", "metro.pop.total.10",
+          "p.white.10", "p.black.10", "p.hisp.10", "p.asian.10",
+          "p.col.edu.10", "p.prof.10",
+          "p.unemp.10", "pov.rate.10", "metro.unemp.rank.10",
+          "num.lihtc", "lihtc.total", "num.nmtc", "nmtc.total",
+          "p.selfemp.00", "p.selfemp.10", "increase.p.selfemp"
+          ) ) 
+
+```
+
+## Save Dataset to File
+
+At this point, a concise and tidy dataset has been created, so saving it as a file is wise.
+
+```{r}
+file.name <- paste0( "data/rodeo/urban_census.rds" )
+  saveRDS( data_urban, file.name )
+```
+
+# Update Models Adding Tax Credit Amounts
+
+## Clean up Dataset for Modeling
+
+In this code, we're creating True/False values for whether NMTC or LIHTC tax credits were given. Next is logging the Median Home Values for 2000 and 2010. Finally, a treatment variable is created to distinguish tax credit. Now let's look at how our chosen variables stack up with recipients and non-recipients of the two tax credits.
+
+```{r}
+# Create a true/false code for recipient tracts
+data_urban$LIHTC <- ifelse( data_urban$num.lihtc > 0, "YES", "NO" )
+data_urban$NMTC <- ifelse( data_urban$num.nmtc > 0, "YES", "NO" )
+
+# Log Median Home Value
+y1 <- log( data_urban$mhv.00 )
+y2 <- log( data_urban$mhv.10 )
+
+treat.nmtc <- as.numeric( data_urban$num.nmtc > 0 )
+treat.lihtc <- as.numeric( data_urban$num.lihtc > 0 )
+```
+
+
+## Self-Employment
+
+For both NMTC and LIHTC recipients, it shows that there was less of a percentage of self-employment, but at a higher density than the non-recipients.
+
+```{r}
+### Self-Employment
+
+p3 <- 
+  ggplot( data_urban, aes(x=p.selfemp.00, fill=LIHTC )) +
+  geom_density( alpha=0.4 )  +
+  ggtitle("Comparision of Self Employment 2000 to 2010: \nRecipients vs Non-Recipients")
+
+p4 <- 
+ggplot( data_urban, aes(x=p.selfemp.00, fill=NMTC )) +
+  geom_density( alpha=0.4 )  +
+  ggtitle("Comparision of Self Employment 2000 to 2010: \nRecipients vs Non-Recipients") 
+
+grid.arrange( p3, p4, nrow = 1 )
+```
+
+## Unemployment
+
+Unemplpyment shows a much different set of graphs. Recipients of both NMTC and LIHTC tax credits, have a higher percentage but a lower density.
+
+```{r}
+### Unemployment
+
+p5 <- 
+  ggplot( data_urban, aes(x=p.unemp.00, fill=LIHTC )) +
+  geom_density( alpha=0.4 )  +
+  ggtitle("Comparision of Unemployment 2000 to 2010: \nRecipients vs Non-Recipients")
+
+p6 <- 
+ggplot( data_urban, aes(x=p.unemp.00, fill=NMTC )) +
+  geom_density( alpha=0.4 )  +
+  ggtitle("Comparision of Unemployment 2000 to 2010: \nRecipients vs Non-Recipients") 
+
+grid.arrange( p5, p6, nrow = 1 )
+```
+
+## Metro Median Pay
+
+Recipients seem to show a smaller density, but a very similar spread. This deduces that the tax credits had no effect on median pay.
+
+```{r}
+### Metro Median Pay
+
+p7 <- 
+  ggplot( data_urban, aes(x=metro.median.pay.00, fill=LIHTC )) +
+  geom_density( alpha=0.4 )  +
+  ggtitle("Comparision of Metro Median Pay in 2000 to 2010: \nRecipients vs Non-Recipients")
+
+p8 <- 
+ggplot( data_urban, aes(x=metro.median.pay.00, fill=NMTC )) +
+  geom_density( alpha=0.4 )  +
+  ggtitle("Comparision of Metro Median Pay in 2000 to 2010: \nRecipients vs Non-Recipients") 
+
+grid.arrange( p7, p8, nrow = 1 )
+```
+
+
+## Difference-in-Difference Model
+
+Looking at the Difference in Difference model, we see that both NMTC and LIHTC tax credits show a highly similar pattern for the chosen control variables.
+
+```{r, results="asis"}
+data_2000 <- data.frame(y = y1, treat = treat.nmtc, post = 0, percent.selfemployed = data_urban$p.selfemp.00, metro.median.pay = data_urban$metro.median.pay.00, percent.unemployed = data_urban$p.unemp.00)
+data_2010 <- data.frame(y = y2, treat = treat.nmtc, post = 1, percent.selfemployed = data_urban$p.selfemp.10, metro.median.pay = data_urban$metro.median.pay.10, percent.unemployed = data_urban$p.unemp.10)
+data_both <- rbind(data_2000,  data_2010)
+
+
+nmtc_reg <- lm(y ~ treat + post + treat * post + percent.selfemployed + metro.median.pay + percent.unemployed, data = data_both)
+
+
+data2_2000 <- data.frame(y = y1, treat = treat.lihtc, post = 0, percent.selfemployed = data_urban$p.selfemp.00, metro.median.pay = data_urban$metro.median.pay.00, percent.unemployed = data_urban$p.unemp.00)
+data2_2010 <- data.frame(y = y2, treat = treat.lihtc, post = 1, percent.selfemployed = data_urban$p.selfemp.10, metro.median.pay = data_urban$metro.median.pay.10, percent.unemployed = data_urban$p.unemp.10)
+data2_both <- rbind(data2_2000,  data2_2010)
+
+
+lihtc_reg <- lm(y ~ treat + post + treat * post + percent.selfemployed + metro.median.pay + percent.unemployed, data = data2_both)
+
+
+stargazer( nmtc_reg, lihtc_reg, 
+           type=s.type, 
+           digits=2
+           )
+```
+
+-------
+<br>
+
+Analysis Created By: Group 1: Ricky Duran, Jason Eastman, & Katie Gentry
+For: CPP 528 - Data Sciences for Public Service III (Spring 2020)
+Created On: "`r format(Sys.time(), '%B %d, %Y')`"
+
+<br>

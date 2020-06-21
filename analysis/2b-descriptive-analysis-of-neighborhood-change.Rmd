@@ -1,0 +1,456 @@
+---
+title: "Descriptive Analysis of Neighborhood Change"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    theme: flatly
+    highlight: haddock
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( echo=TRUE, message=FALSE, warning=FALSE, fig.width=10 )
+```
+
+# Overview
+
+For this portion of the project, we are calculating Changes in Median Home Value and Neighborhood Metrics, from 2000 to 2010.
+
+# Packages Used
+
+```{r}
+library( dplyr )
+library( knitr )
+library( pander )
+library( stargazer )
+library( here )
+library( scales )
+library( ggplot2 )
+library( ggthemes )
+library( gridExtra )
+set.seed( 1234 )
+s.type <- "text"
+```
+
+# Data
+
+For this project, we are using data from the [Longitudinal Tabulated Database (LTDB)](https://s4.ad.brown.edu/projects/diversity/Researcher/Bridging.htm)
+
+## Load and Merge Data
+
+The first step is to download data for the years 2000 and 2010 along with their metadata and combine them into one dataset.
+
+```{r, include=FALSE}
+d1 <- readRDS( here("/data/rodeo/LTDB-2000.rds" ))
+d2 <- readRDS( here("/data/rodeo/LTDB-2010.rds" ))
+md <- readRDS( here("/data/rodeo/LTDB-META-DATA.rds" ))
+
+d1 <- select( d1, - year )
+d2 <- select( d2, - year )
+
+d <- merge( d1, d2, by="tractid" )
+d <- merge( d, md, by="tractid" )
+```
+
+## Filter for Urban Cities
+
+For this project we were interested in only urban areas, we omitted rural areas by filtering only urban tracts. We also omitted non-numeric values.
+
+```{r}
+d <- filter( d, urban.x == "urban" )
+d$id2 <- gsub( "[^0-9]", "", d$tractid )
+```
+
+# Calculating MHV Change & Growth
+
+## Accounting for Inflation
+We accounted for inflation of the ($) USD, by multiplying 2000 Median Home Values by 1.28855
+
+**TIP:** You can google “inflation calculator” to find a conversion rate, by  a start and final year and use $1 as the starting value. [Westegg](https://westegg.com/inflation/) is one of an example.
+
+Alternatively, you can always estimate it if you know the average long-term inflation rate. Since 2000 the rate has averaged about 2.5% in the US, so you can use:
+
+10 year inflation factor
+(1.025)^10
+[1] 1.280085
+
+Prior to 2000 the rates were higher and they fluctuated quite a bit through the 70’s and 80’s so if you are going back in time further it is better to use a calculator. The calculators should use the actual rates by year.
+
+```{r}
+# adjust 2000 home values for inflation 
+mhv.00 <- d$mhmval00 * 1.28855  
+mhv.10 <- d$mhmval12
+```
+
+## Variable Creation
+
+We then used these new relative values to determine the 10 year change in Median Home Value.
+
+```{r}
+# Median Home Value change ($) from 2000 to 2010
+mhv.change <- mhv.10 - mhv.00
+# Fliter out home values less than 10k
+mhv.00[ mhv.00 < 1000 ] <- NA
+# Median Home Value change ($) from 2000 to 2010
+mhv.growth <- 100 * ( mhv.change / mhv.00 )
+mhv.growth[ mhv.growth > 200 ] <- NA
+# Adding Variables back into Dataset
+d$mhv.00 <- mhv.00
+d$mhv.10 <- mhv.10
+d$mhv.change <- mhv.change
+d$mhv.growth <- mhv.growth
+```
+
+# Calculating Neighborhood Change
+
+## Formatting Neighborhood data
+
+First, we will organize the neighborhood characteristic data, and create new variables.
+
+```{r}
+#Calculating new proportion variables from existing variables.
+d <- 
+  d %>%
+  mutate( 
+          # 2000 variables
+          p.white.00 = 100 * nhwht00 / pop00.x,
+          p.black.00 = 100 * nhblk00 / pop00.x,
+          p.hisp.00 = 100 * hisp00 / pop00.x, 
+          p.asian.00 = 100 * asian00 / pop00.x,
+          p.hs.edu.00 = 100 * (hs00+col00) / ag25up00,
+          p.col.edu.00 = 100 * col00 / ag25up00,
+          p.prof.00 = 100 * prof00 / empclf00,
+          p.unemp.00 = 100 * unemp00 / clf00,
+          pov.rate.00 = 100 * npov00 / dpov00,
+          p.rent.00 = 100 * rent00 / hu00,
+          # 2010 variables
+          p.white.10 = 100 * nhwht10 / pop10,
+          p.black.10 = 100 * nhblk10 / pop10,
+          p.hisp.10 = 100 * hisp10 / pop10, 
+          p.asian.10 = 100 * asian10 / pop10,
+          p.hs.edu.10 = 100 * (hs12+col12) / ag25up12,
+          p.col.edu.10 = 100 * col12 / ag25up12,
+          p.prof.10 = 100 * prof12 / empclf12,
+          p.unemp.10 = 100 * unemp12 / clf12,
+          pov.rate.10 = 100 * npov12 / dpov12,
+          p.rent.10 = 100 * rent10 / hu10 )
+```
+
+Next, we will create variables to determine changes in our neighborhood characteristics of interest, similar to how we did with Change in Median Home Value
+
+```{r}
+# Calculate new variables using "group_by"
+d <-
+  d %>%
+  group_by( cbsaname.x ) %>%
+  mutate( metro.mhv.pct.00 = ntile( mhv.00, 100 ),
+          metro.mhv.pct.10 = ntile( mhv.10, 100 ),
+          metro.median.pay.00 = median( hinc00, na.rm=T ),
+          metro.median.pay.10 = median( hinc12, na.rm=T ),
+          metro.diversity.rank.00 = ntile( (100-p.white.00), 100 ),
+          # metro total population 2000
+          metro.pop.total.00 = sum( pop00.x, na.rm=T ),
+          # metro total population 2010
+          metro.pop.total.10 = sum( pop10, na.rm=T ),
+          # tract rank in metro area for unemployment in 2000
+          metro.unemp.rank.00 = ntile( p.unemp.00, 100 ),
+          # tract rank in metro area for unemployment in 2010
+          metro.unemp.rank.10 = ntile( p.unemp.10, 100 ) ) %>%
+  ungroup() %>%
+  mutate( metro.mhv.pct.change = metro.mhv.pct.10 - metro.mhv.pct.00,
+          # metro population growth 2000-2010
+          metro.pop.growth =
+            ( metro.pop.total.10 - metro.pop.total.00 ) / metro.pop.total.00,
+          metro.unemp.pct.change = metro.unemp.rank.10 - metro.unemp.rank.00,
+          pay.change = metro.median.pay.10 - metro.median.pay.00,
+          race.change = p.white.10 - p.white.00,
+          pov.change = pov.rate.10 - pov.rate.00,
+          p.unemp.change = p.unemp.10 - p.unemp.00,
+          p.col.edu.change = p.col.edu.10 - p.col.edu.00,
+          p.rent.change = p.rent.10 - p.rent.00)
+# Keep only variables we need
+d <-           
+  d %>%
+  select( c( "tractid", "cbsa.x", "cbsaname.x",
+          "mhv.00", "mhv.10", "mhv.change",
+          "p.white.00", "p.black.00", "p.hisp.00", "p.asian.00", 
+          "p.col.edu.00", "p.col.edu.10", "pov.rate.00","pov.rate.10","p.unemp.00", "p.unemp.10", "p.rent.00", "p.rent.10", "metro.median.pay.00", "metro.median.pay.10",
+          "metro.mhv.pct.00", "metro.median.pay.00", "metro.pop.total.00",
+          "metro.unemp.pct.change", "metro.unemp.rank.00",
+          "metro.pop.growth", "metro.mhv.pct.change", "pay.change", "race.change",
+          "metro.diversity.rank.00", "pov.change", "p.unemp.change",
+          "p.col.edu.change", "p.rent.change"
+          ) ) 
+# Create Dataset Backup
+d.full <- d
+d <- d.full
+```
+
+# Change in Median Home Value 
+
+If a home worth $10 million increased in value by $100k over ten years it would not be that surprising. If a home worth $50k increased by $100k over the same period that is a growth of 200% and is notable.
+
+The change in value variable only reports absolute change, but does not provide a sense of whether that is a big or small amount for the census tract.
+
+## Descriptive Statistics
+
+```{r,}
+df <- data.frame( MedianHomeValue2000=mhv.00, 
+                  MedianHomeValue2010=mhv.10, 
+                  MHV.Change.00.to.10=mhv.change,
+                  MHV.Growth.00.to.12=mhv.growth )
+
+stargazer( df, 
+           type=s.type, 
+           digits=0, 
+           summary.stat = c("min", "p25","median","mean","p75","max") )
+```
+
+## Median Home Value ($)
+
+The average change in Median Home Value was $ 60,047, while the Median was $36,268.
+
+```{r}
+hist( mhv.change/1000, breaks=500, 
+      xlim=c(-100,500), yaxt="n", xaxt="n",
+      xlab="Thousand of US Dollars (adjusted to 2010)", cex.lab=1.5,
+      ylab="", main="Change in Median Home Value 2000 to 2010",
+      col="gray20", border="white" )
+
+axis( side=1, at=seq( from=-100, to=500, by=100 ), 
+      labels=paste0( "$", seq( from=-100, to=500, by=100 ), "k" ) )
+        
+mean.x <- mean( mhv.change/1000, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=200, y=1500, 
+      labels=paste0( "Mean = ", dollar( round(1000*mean.x,0)) ), 
+      col="darkorange", cex=1.8, pos=3 )
+
+median.x <- median( mhv.change/1000, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=200, y=2000, 
+      labels=paste0( "Median = ", dollar( round(1000*median.x,0)) ), 
+      col="dodgerblue", cex=1.8, pos=3 )
+```
+
+## Median Home Value (%)
+
+The average % change in Median Home Value was 29%, while the Median was 25%.
+
+```{r}
+hg <-
+hist( mhv.growth, breaks=110, 
+      xlim=c(-100,200), yaxt="n", xaxt="n",
+      xlab="", cex.main=1.5,
+      ylab="", main="Growth in Home Value by Census Tract 2000 to 2010",
+      col="gray20", border="white" )
+
+axis( side=1, at=seq( from=-100, to=200, by=50 ), 
+      labels=paste0( seq( from=-100, to=200, by=50 ), "%" ) )
+
+ymax <- max( hg$count )
+        
+mean.x <- mean( mhv.growth, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=60, y=(0.5*ymax), 
+      labels=paste0( "Mean = ", round(mean.x,0), "%"), 
+      col="darkorange", cex=1.8, pos=4 )
+
+median.x <- median( mhv.growth, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=60, y=(0.6*ymax), 
+      labels=paste0( "Median = ", round(median.x,0), "%"), 
+      col="dodgerblue", cex=1.8, pos=4 )
+```
+
+# Change in Neighborhood Metrics 
+
+**For this project, Group 1 chose to evaluate the following qualities, based on their ability to predict for gentrification:**
+
+The variables used to identify neighborhoods that could be a candidate for gentrification were:
+
+- **Education Level:** We look for neighborhoods that show a decrease in uneducated people as a signal for gentrification.
+
+- **Poverty Rate:** We look at neighborhoods that show a decrease in poverty in the ten year span as an indicator for gentrification.
+
+- **Unemployed Rate:** We look for areas that show a decrease in unemployment showing possible gentrification.
+
+- **Proportion Renters:** We look at tracts that have a decrease in renters, signifying that people are more likely moving into housing units instead, showing possible gentrification.
+
+- **Median Income:** Finally, we look at city-wide values for cities that show an increase in income.
+
+## Decriptive Statistics
+
+```{r}
+df <- data.frame( Pct.College.Educated.00=d$p.col.edu.00/100,
+                  Pct.College.Educated.10=d$p.col.edu.10/100,
+                  Poverty.Rate.00=d$pov.rate.00/100,
+                  Poverty.Rate.00=d$pov.rate.10/100,
+                  Pct.Unemployed.00=d$p.unemp.00/100,
+                  Pct.Unemployed.10=d$p.unemp.10/100,
+                  Pct.Renters.00=d$p.rent.00/100,
+                  Pct.Renters.10=d$p.rent.10/100,
+                  Median.Income.00=d$metro.median.pay.00,
+                  Median.Income.10=d$metro.median.pay.10
+                  )
+
+stargazer( df, 
+           type=s.type, 
+           digits=2, 
+           summary.stat = c("min", "p25","median","mean","p75","max") )
+```
+
+## Education Level
+
+The average % change in College Education Residents was 4%, while the Median was 3%.
+
+```{r}
+hist( d$p.col.edu.change, breaks=100, 
+      xlim=c(-30,40), yaxt="n", xaxt="n",
+      xlab="Change in Propotion (%)", cex.lab=1.5,
+      ylab="", main="Change in College Educated Residents (%) 2000 to 2010",
+      col="gray40", border="white" )
+
+axis( side=1, at=seq( from= -30, to=40, by=5 ), 
+      labels=paste0( seq( from= -30, to= 40, by=5 )) )
+        
+mean.x <- mean( d$p.col.edu.change, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=20, y=4000, 
+      labels=paste0( "Mean = ", round(mean.x,0), "%" ), 
+      col="darkorange", cex=1.8, pos=3 )
+
+median.x <- median( d$p.col.edu.change, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=21, y=3000, 
+      labels=paste0( "Median = ",  round(median.x,0), "%" ), 
+      col="dodgerblue", cex=1.8, pos=3 )
+```
+
+## Poverty Rate
+          
+The average % change in Poverty Rate was 3%, while the Median was 2%.
+
+```{r}
+hist( d$pov.change, breaks=100, 
+      xlim=c(-30,40), yaxt="n", xaxt="n",
+      xlab="Change in Rate (%)", cex.lab=1.5,
+      ylab="", main="Change in Poverty Rate (%) 2000 to 2010",
+      col="gray40", border="white" )
+
+axis( side=1, at=seq( from= -30, to=40, by=5 ), 
+      labels=paste0( seq( from= -30, to= 40, by=5 )) )
+        
+mean.x <- mean( d$pov.change, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=15, y=4200, 
+      labels=paste0( "Mean = ", round(mean.x,0), "%" ), 
+      col="darkorange", cex=1.8, pos=3 )
+
+median.x <- median( d$pov.change, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=16, y=3200, 
+      labels=paste0( "Median = ",  round(median.x,0), "%" ), 
+      col="dodgerblue", cex=1.8, pos=3 )
+```
+
+## Unemployment Rate
+          
+The average % change in Unemployment Rate was 4%. Median change was also 4%.
+
+```{r}
+hist( d$p.unemp.change, breaks=100, 
+      xlim=c(-30,40), yaxt="n", xaxt="n",
+      xlab="Change in Rate (%)", cex.lab=1.5,
+      ylab="", main="Change in Unemployment Rate (%) 2000 to 2010",
+      col="gray40", border="white" )
+
+axis( side=1, at=seq( from= -30, to=40, by=5 ), 
+      labels=paste0( seq( from= -30, to= 40, by=5 )) )
+        
+mean.x <- mean( d$p.unemp.change, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=15, y=6000, 
+      labels=paste0( "Mean = ", round(mean.x,0), "%" ), 
+      col="darkorange", cex=1.8, pos=3 )
+
+median.x <- median( d$p.unemp.change, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=16, y=5000, 
+      labels=paste0( "Median = ",  round(median.x,0), "%" ), 
+      col="dodgerblue", cex=1.8, pos=3 )
+```
+
+
+## Proportion Renters
+
+The average % change in Unemployment Rate was only 1%. Median change was also 1%.
+
+```{r}
+hist( d$p.rent.change, breaks=100, 
+      xlim=c(-40,40), yaxt="n", xaxt="n",
+      xlab="Change in Proportion (%)", cex.lab=1.5,
+      ylab="", main="Change in Renting Residents (%) 2000 to 2010",
+      col="gray40", border="white" )
+
+axis( side=1, at=seq( from= -40, to=40, by=5 ), 
+      labels=paste0( seq( from= -40, to= 40, by=5 )) )
+        
+mean.x <- mean( d$p.rent.change, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=15, y=6000, 
+      labels=paste0( "Mean = ", round(mean.x,0), "%" ), 
+      col="darkorange", cex=1.8, pos=3 )
+
+median.x <- median( d$p.rent.change, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=16, y=5000, 
+      labels=paste0( "Median = ",  round(median.x,0), "%" ), 
+      col="dodgerblue", cex=1.8, pos=3 )
+```
+
+## Median Income
+          
+The average change in Median Home Income was $ 10,852, while the Median was $9,764.
+
+```{r}
+hist( d$pay.change/1000, breaks=100, 
+      xlim=c(-10,30), yaxt="n", xaxt="n",
+      xlab="Thousand of US Dollars", cex.lab=1.5,
+      ylab="", main="Change in Median Income ($) 2000 to 2010",
+      col="gray20", border="white" )
+
+axis( side=1, at=seq( from=-10, to=30, by=5 ), 
+      labels=paste0( "$", seq( from=-10, to=30, by=5 ), "k" ) )
+        
+mean.x <- mean( d$pay.change/1000, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=21, y=2000, 
+      labels=paste0( "Mean = ", dollar( round(1000*mean.x,0)) ), 
+      col="darkorange", cex=1.8, pos=3 )
+
+median.x <- median( d$pay.change/1000, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=21, y=2500, 
+      labels=paste0( "Median = ", dollar( round(1000*median.x,0)) ), 
+      col="dodgerblue", cex=1.8, pos=3 )
+```
+
+# References
+
+Baum-Snow, N., and Hartley, D. (2016). Accounting for central neighborhood change, 1980-2010. Federal Reserve Bank of Chicago (April 26, 2020). https://github.com/DS4PS/cpp-528-spr-2020/raw/master/articles/home-value-change/economic-model-central-city-neighborhoods-white-flight-white-return.pdf
+
+Data Sciences for Public Service. (2020). Data Sciences III. Arizona State University MS in Program Evaluation & Data Analytics (April 26, 2020). https://ds4ps.org/cpp-528-spr-2020/labs/lab-06-tutorial.html
+
+Way, H., Mueller, E., and Wegmann, J. (2018). Uprooted: Residential displacement in Austin’s gentrifying neighborhoods and what can be done about it. University of Texas (April 26, 2020). [Excerpt](https://r-class.github.io/cpp-528-spr-2020-group-01/files/gentrification-methodology.pdf) | [Full Report](https://www.urbandisplacement.org/sites/default/files/images/utgentrification-fullreport.pdf)
+
+-------
+<br>
+
+Analysis Created By: Group 1: Ricky Duran, Jason Eastman, & Katie Gantry
+For: CPP 528 - Data Sciences for Public Service III (Spring 2020)
+Created On: "`r format(Sys.time(), '%B %d, %Y')`"
+
+<br>
