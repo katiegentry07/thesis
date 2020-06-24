@@ -1,0 +1,309 @@
+---
+title: "Gentrification and Community Land Trusts"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    theme: sandstone
+    highlight: kate
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( echo=TRUE, message=FALSE, warning=FALSE, fig.width=10 )
+```
+
+# Overview
+
+As seen in the Analysis of Neighborhood Changes, Chandler is a unique city with many different neighborhoods. Gentrification may be changing those different neighborhoods, but are Community Land Trusts slowing the gentrification? 
+
+To evaluate Community Land Trusts, we will analyze neighborhoods that are not gentrifying in the City of Chandler and then specifically evaluate neighborhoods with Community Land Trusts. 
+
+# Set-up
+
+We need to set up the data and analysis completed in the Analysis of Neighborhood Changes. 
+
+```{r}
+library( dplyr )
+library( knitr )
+library( pander )
+library( stargazer )
+library( here )
+library( scales )
+library( ggplot2 )
+library( ggthemes )
+library( gridExtra )
+library( geojsonio )   
+library( sp )          
+library( sf )          
+library( tmap )        
+library( cartogram ) 
+library( maptools )   
+```
+
+```{r, include=FALSE}
+d1 <- readRDS( here("/data/rodeo/LTDB-2000.rds" ))
+d2 <- readRDS( here("/data/rodeo/LTDB-2010.rds" ))
+md <- readRDS( here("/data/rodeo/LTDB-META-DATA.rds" ))
+city <- readRDS ( here("/data/rodeo/ChandlerCensusTracts.rds" ))
+
+d1 <- select( d1, - year )
+d2 <- select( d2, - year )
+
+d <- merge( d1, d2, by="tractid" )
+d <- merge( d, md, by="tractid" )
+
+d <- merge( d, city, by="tractid")
+d$id2 <- gsub( "[^0-9]", "", d$tractid )
+```
+
+```{r}
+# adjust 2000 home values for inflation 
+mhv.00 <- d$mhmval00 * 1.28855  
+mhv.10 <- d$mhmval12
+
+# Median Home Value change ($) from 2000 to 2010
+mhv.change <- mhv.10 - mhv.00
+# Filter out home values less than 10k to prevent skew
+mhv.00[ mhv.00 < 1000 ] <- NA
+# Median Home Value change ($) from 2000 to 2010
+mhv.growth <- 100 * ( mhv.change / mhv.00 )
+# Filter out home values that had growth more than 200% to prevent skew
+mhv.growth[ mhv.growth > 200 ] <- NA
+# Add Variables back into Dataset
+d$mhv.00 <- mhv.00
+d$mhv.10 <- mhv.10
+d$mhv.change <- mhv.change
+d$mhv.growth <- mhv.growth
+```
+
+```{r}
+# Calculating new proportion variables from existing variables.
+d <- 
+  d %>%
+  mutate( 
+          # 2000 variables
+          p.white.00 = 100 * nhwht00 / pop00.x,
+          p.black.00 = 100 * nhblk00 / pop00.x,
+          p.hisp.00 = 100 * hisp00 / pop00.x, 
+          p.asian.00 = 100 * asian00 / pop00.x,
+          p.native.00 = 100 * ntv00 / pop00.x,
+          p.hs.edu.00 = 100 * (hs00+col00) / ag25up00,
+          p.col.edu.00 = 100 * col00 / ag25up00,
+          p.prof.00 = 100 * prof00 / empclf00,
+          p.unemp.00 = 100 * unemp00 / clf00,
+          pov.rate.00 = 100 * npov00 / dpov00,
+          pov.fam.00 = 100 * nfmpov00 / dfmpov00, 
+          p.rent.00 = 100 * rent00 / hu00,
+          
+          # 2010 variables
+          p.white.10 = 100 * nhwht10 / pop10,
+          p.black.10 = 100 * nhblk10 / pop10,
+          p.hisp.10 = 100 * hisp10 / pop10, 
+          p.asian.10 = 100 * asian10 / pop10,
+          p.native.10 = 100 * ntv10 / pop10,
+          p.hs.edu.10 = 100 * (hs12+col12) / ag25up12,
+          p.col.edu.10 = 100 * col12 / ag25up12,
+          p.prof.10 = 100 * prof12 / empclf12,
+          p.unemp.10 = 100 * unemp12 / clf12,
+          pov.rate.10 = 100 * npov12 / dpov12,
+          pov.fam.10 = 100 * nfmpov12 / dfmpov12, 
+          p.rent.10 = 100 * rent10 / hu10 )
+```
+
+```{r}
+# Calculate new variables using percentages created above
+d <-
+  d %>%
+  #pay adjusted for inflation
+  mutate( pay.00 = hinc00 * 1.28855,
+          pay.10 = hinc12,
+          p.color.00 = (100-p.white.00), 
+          p.color.10 = (100-p.white.10), 
+          pop.total.00 = sum( pop00.x, na.rm=T ),
+          pop.total.10 = sum( pop10, na.rm=T ),
+          pop.growth =
+            (pop.total.10 - pop.total.00 ) / pop.total.00,
+          pay.change = pay.10 - pay.00,
+          p.color.change = p.color.10 - p.color.00,
+          pov.change = pov.rate.10 - pov.rate.00,
+          pov.fam.change = pov.fam.10 - pov.fam.00,
+          p.col.edu.change = p.col.edu.10 - p.col.edu.00,
+          p.rent.change = p.rent.10 - p.rent.00)
+
+# Keep only variables we need
+d <-           
+  d %>%
+  select( c( "tractid", "city",
+          "mhv.00", "mhv.10", "mhv.change", "mhv.growth", 
+          "p.white.00", "p.black.00", "p.hisp.00", "p.asian.00", "p.native.00", "p.white.10", 
+          "p.black.10", "p.hisp.10", "p.asian.10", "p.native.10", "p.color.00", "p.color.10",
+          "p.col.edu.00", "p.col.edu.10", "pov.rate.00","pov.rate.10","pov.fam.00", "pov.fam.10", 
+          "p.rent.00", "p.rent.10", "pay.00", "pay.10",
+          "pop.total.00", "pop.total.10", "pop.growth", "pay.change", "p.color.change",
+          "pov.change", "pov.fam.change", "p.col.edu.change", "p.rent.change"
+          ) ) 
+
+# Create Dataset Backup
+d.full <- d
+d <- d.full
+```
+
+# Predicting Change Based on 2000 Neighborhood Characteristics
+
+By analyzing specific 2000 census data, we can predict neighborhoods that won't gentrify if given the opportunity. First we must establish what consists of a neighborhood that can be a candidate for gentrification using median income. By finding tracts that have a lower 2010 income than the 2000 income adjusted for inflation, we can speculate that the tract might have potential for gentrification.
+
+Next, we need to establish which factors signify whether a neighborhood has been gentrified. The following variables were used for this process:
+
+- **Less Uneducated:** We look for neighborhoods that show a decrease in uneducated people as a signal for gentrification.
+
+- ***Less Poverty:*** We look at neighborhoods that show a decrease in poverty in the ten year span as an indicator for gentrification.
+
+- **Less Poverty for Families with Children:** We look at neighborhoods that show a decrease in family poverty in the ten year span as an indicator for gentrification.
+
+- ***Less Renters:*** We look at tracts that have a decrease in renters, singifying that people are more likely moving into housing units instead, showing possible gentrification.
+
+- **Less Minority:** We look at tracts that have a decrease in minority population, signifying that white individuals are moving in and displacing minority individuals. 
+
+## Create data for Potential Neighborhoods that Gentrified
+
+To analyze gentrification, we need to determine which neighborhoods have the ability to gentrify and then determine which of those eligible neighborhoods did gentrify. These logic variables create a threshold for determining gentrification and then are used to filter for gentrified neighborhoods. 
+
+```{r}
+# education status
+# poverty
+# family poverty
+# % renters
+# % color
+
+## tracts that did not gentrify
+
+# proportion of college educated decreased
+less.educated <- d$p.col.edu.change < 0
+
+# proportion of poverty stayed the same or increased
+more.poverty <- d$pov.change >= 0
+
+# proportion of family poverty stayed the same or increased
+more.fam.poverty <- d$pov.fam.change >= 0
+
+# proportion of renters stayed the same or increased
+more.renters <- d$p.rent.change >= 0
+
+# proportion of minority stayed the same or increased
+more.minority <- d$p.color.change >= 0
+
+# Create logic variables that signify what were looking for
+
+# income less than median
+lower.income <- d$pay.00 > d$pay.10
+
+g.flag <- lower.income & less.educated & more.poverty & more.fam.poverty & more.renters & more.minority
+
+# Create subsets of the candidates and the gnetrified tracts
+d_candidates <- d[lower.income,]
+d_nogentrified <- d[g.flag,]
+d_nogentrified <- na.omit(d_nogentrified)
+
+# Add up how many candidates and how many gentirfied tracts
+num.candidates <-  sum( lower.income, na.rm=T )
+num.nogentrified <- sum( g.flag, na.rm=T )
+```
+
+# Demographics of the Candidate and Gentrified Neighborhoods
+
+Looking at a summary of the candidates for gentrification below, we can see the overall demographics of the neighborhoods. We see a high percentage of individuals who are white that decreases from 2000 to 2010, an increase in education, an increase in renters, and a decrease in pay. 
+
+```{r, results="asis"}
+d_candidates <- data.frame(d_candidates)
+stargazer( d_candidates, 
+           type="html", 
+           digits=0, 
+           summary.stat = c("min", "p25","median","mean","p75","max") )
+```
+
+Looking at a summary of the neighborhoods that did not gentrify below, we can see the comparison to the candidate demographics. We see a higher percentage of minority change, higher rate of poverty, higher rate of family poverty, less education, and more renters - all indicators of gentrification not happening. 
+
+```{r, results="asis"}
+d_nogentrified <- data.frame(d_nogentrified)
+stargazer( d_nogentrified, 
+           type="html", 
+           digits=0, 
+           summary.stat = c("min", "p25","median","mean","p75","max") )
+```
+
+There were 39 neighborhoods that were candidates for gentrification. Of these, 11 did not gentrify (approximately 28%). 
+
+```{r}
+num.candidates
+
+num.nogentrified / num.candidates
+```
+
+# Comparison of Non-Gentrified Neighborhoods and Community Land Trust Neighborhoods
+
+We will now compare neighborhoods where Community Land Trust homes reside to the neighborhoods that did not gentrify to see if there is a correlation between the two groups by uploading the Community Land Trust data, merging, and sorting. 
+
+```{r, include=FALSE}
+clt <- readRDS( here("/data/rodeo/Chandler_Community_Land_Trusts_by_Census_Tract.rds" ))
+
+d_clt <- merge( d, clt, by="tractid", all=TRUE, na.omit=TRUE)
+d$id2 <- gsub( "[^0-9]", "", d$tractid )
+```
+
+Of the 19 census tracts that contain Community Land Trust homes, 6 of the tracts were also identified as tracts that did not gentrify. Comparatively, 5 of the tracts that did not contain Community Land Trust homes did not gentrify. 
+
+```{r}
+nogent_clt <- merge(clt, d_nogentrified, by="tractid", na.omit=TRUE)
+```
+
+Comparatively to the candidate tracts, non-gentrified tracts With Community Land Trusts had slightly more poverty but less renters. The home value is slightly lower in these non-gentrified tracts, but saw similar rates of growth. The percent of minorities is relatively the same, but the percent of uneducated is higher. 
+
+```{r, results="asis"}
+d_nogent_clt <- data.frame(nogent_clt)
+stargazer( d_nogent_clt, 
+           type="html", 
+           digits=0, 
+           summary.stat = c("min", "p25","median","mean","p75","max") )
+```
+
+# Mapping of Non-Gentrified Tracts, Community Land Trust Tracts, and the Overlap
+
+To view the mapping, we must first upload a mapping package and merge with the selected Chandler data. To see the comparison, we can map the tracts that contain Community Land Trust homes, the non-gentrified tracts, and where the two overlap - the non-gentrified tracts that contain Community Land Trust homes. 
+
+```{r}
+# we have Maricopa County already packaged and on GitHub for easy load: 
+github.url <- "https://raw.githubusercontent.com/DS4PS/cpp-529-master/master/data/phx_dorling.geojson"
+phx <- geojson_read( x=github.url,  what="sp" )
+
+clt_map <- readRDS( here("/data/rodeo/ChandlerCensusMap.rds" ))
+
+data_map_clt <- clt_map
+# create small dataframe for the merge
+df1 <- data.frame( data_map_clt )
+
+# create GEOID that matches GIS format
+
+# create a geoID for merging by tract 
+df1$GEOID <- substr( df1$tractid, 6, 18 )  # extract codes
+df1$GEOID <- gsub( "-", "", df1$GEOID )    # remove hyphens
+
+clt_map <- merge( phx, df1, by.x="GEOID", by.y="GEOID" )
+```
+
+```{r}
+clt_map <- spTransform( clt_map, CRS("+init=epsg:3395") )
+
+bb <- st_bbox( c( xmin = -12470000, xmax = -12431368, 
+                 ymax = 3925924, ymin = 3880074 ), 
+               crs = st_crs("+init=epsg:3395")) 
+
+clt_map1 <-
+  tm_shape( clt_map, bbox=bb ) + 
+  tm_polygons( col=c("CLT.Homes", "Not.Gentrified", "Nogent.CLT"),
+               n=2, ncol=2, style="quantile", palette="Spectral" ) +
+  tm_layout( "Dorling Cartogram", title.position=c("right","top"), legend.position = c("left", "bottom") )
+
+clt_map1
+```

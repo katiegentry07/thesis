@@ -1,0 +1,479 @@
+---
+title: "Analysis of Neighborhood Changes"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    theme: sandstone
+    highlight: kate
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( echo=TRUE, message=FALSE, warning=FALSE, fig.width=10 )
+```
+
+# Overview
+
+Neighborhoods are the makeup of each city and as a city changes, neighborhoods may also change. But are these neighborhoods changing for the better? Gentrification is a hot topic that can be argued makes neighborhoods better as they bring development, focus on growth, and lower crime rates. However, there are adverse effects like displacement, change in neighborhood make-up, and shifting economics that dramatically change a neighborhood. 
+
+In order to evaluate neighborhoods, we first need to analyze what makes up a neighborhood and leads to these changes. 
+
+# Packages Used
+
+```{r}
+library( dplyr )
+library( knitr )
+library( pander )
+library( stargazer )
+library( here )
+library( scales )
+library( ggplot2 )
+library( ggthemes )
+library( gridExtra )
+library( geojsonio )   
+library( sp )          
+library( sf )          
+library( tmap )        
+library( cartogram ) 
+library( maptools )   
+```
+
+# Data
+
+This project uses data from the [Longitudinal Tabulated Database (LTDB)](https://s4.ad.brown.edu/projects/diversity/Researcher/Bridging.htm)
+
+## Load and Merge Data
+
+Using the data from 2000 and 2010 along with their metadata, they must be loaded and merged into one dataset.
+
+```{r, include=FALSE}
+d1 <- readRDS( here("/data/rodeo/LTDB-2000.rds" ))
+d2 <- readRDS( here("/data/rodeo/LTDB-2010.rds" ))
+md <- readRDS( here("/data/rodeo/LTDB-META-DATA.rds" ))
+city <- readRDS ( here("/data/rodeo/ChandlerCensusTracts.rds" ))
+
+d1 <- select( d1, - year )
+d2 <- select( d2, - year )
+
+d <- merge( d1, d2, by="tractid" )
+d <- merge( d, md, by="tractid" )
+```
+
+## Filter for Chandler, Arizona
+
+The research project investigates only Chandler, Arizona. Because Chandler is not it's own MSA or county, we must filter the data by city. However, Census data does not identify cities in data collection and as such, we must merge another file with our data to include the City of Chandler census tracts by id. We also omitted non-numeric values.
+
+```{r}
+d <- merge( d, city, by="tractid")
+d$id2 <- gsub( "[^0-9]", "", d$tractid )
+```
+
+# Neighborhood Changes
+
+To give an overview of the neighborhood changes, we need to start with level playing fields and adjust for inflation as well as create variables from the census data. Not all variables are collected in the census in the way that we want to calculate them, so we begin by creating them in the form of percentages. 
+
+## Calculating MHV Change & Growth
+
+### Accounting for Inflation
+We accounted for inflation of the ($) USD, by multiplying 2000 Median Home Values by 1.28855
+
+**TIP:** You can google “inflation calculator” to find a conversion rate, by  a start and final year and use $1 as the starting value. [Westegg](https://westegg.com/inflation/) is one example.
+
+```{r}
+# adjust 2000 home values for inflation 
+mhv.00 <- d$mhmval00 * 1.28855  
+mhv.10 <- d$mhmval12
+```
+
+## Variable Creation for Median Home Value Change
+
+We then used these new relative values to determine the 10 year change in Median Home Value.
+
+```{r}
+# Median Home Value change ($) from 2000 to 2010
+mhv.change <- mhv.10 - mhv.00
+# Filter out home values less than 10k to prevent skew
+mhv.00[ mhv.00 < 1000 ] <- NA
+# Median Home Value change ($) from 2000 to 2010
+mhv.growth <- 100 * ( mhv.change / mhv.00 )
+# Filter out home values that had growth more than 200% to prevent skew
+mhv.growth[ mhv.growth > 200 ] <- NA
+# Add Variables back into Dataset
+d$mhv.00 <- mhv.00
+d$mhv.10 <- mhv.10
+d$mhv.change <- mhv.change
+d$mhv.growth <- mhv.growth
+```
+
+## Creating New Variables with Percentages
+
+We create new variables using the variables collected in the census.
+
+```{r}
+# Calculating new proportion variables from existing variables.
+d <- 
+  d %>%
+  mutate( 
+          # 2000 variables
+          p.white.00 = 100 * nhwht00 / pop00.x,
+          p.black.00 = 100 * nhblk00 / pop00.x,
+          p.hisp.00 = 100 * hisp00 / pop00.x, 
+          p.asian.00 = 100 * asian00 / pop00.x,
+          p.native.00 = 100 * ntv00 / pop00.x,
+          p.hs.edu.00 = 100 * (hs00+col00) / ag25up00,
+          p.col.edu.00 = 100 * col00 / ag25up00,
+          p.prof.00 = 100 * prof00 / empclf00,
+          p.unemp.00 = 100 * unemp00 / clf00,
+          pov.rate.00 = 100 * npov00 / dpov00,
+          pov.fam.00 = 100 * nfmpov00 / dfmpov00, 
+          p.rent.00 = 100 * rent00 / hu00,
+          
+          # 2010 variables
+          p.white.10 = 100 * nhwht10 / pop10,
+          p.black.10 = 100 * nhblk10 / pop10,
+          p.hisp.10 = 100 * hisp10 / pop10, 
+          p.asian.10 = 100 * asian10 / pop10,
+          p.native.10 = 100 * ntv10 / pop10,
+          p.hs.edu.10 = 100 * (hs12+col12) / ag25up12,
+          p.col.edu.10 = 100 * col12 / ag25up12,
+          p.prof.10 = 100 * prof12 / empclf12,
+          p.unemp.10 = 100 * unemp12 / clf12,
+          pov.rate.10 = 100 * npov12 / dpov12,
+          pov.fam.10 = 100 * nfmpov12 / dfmpov12, 
+          p.rent.10 = 100 * rent10 / hu10 )
+```
+
+## Creating New Variables Based on Percentage Variables
+
+Create variables to determine changes in the neighborhood characteristics of interest, similar to how we did with Change in Median Home Value. 
+
+```{r}
+# Calculate new variables using percentages created above
+d <-
+  d %>%
+  #pay adjusted for inflation
+  mutate( pay.00 = hinc00 * 1.28855,
+          pay.10 = hinc12,
+          p.color.00 = (100-p.white.00), 
+          p.color.10 = (100-p.white.10), 
+          pop.total.00 = sum( pop00.x, na.rm=T ),
+          pop.total.10 = sum( pop10, na.rm=T ),
+          pop.growth =
+            (pop.total.10 - pop.total.00 ) / pop.total.00,
+          pay.change = pay.10 - pay.00,
+          p.color.change = p.color.10 - p.color.00,
+          pov.change = pov.rate.10 - pov.rate.00,
+          pov.fam.change = pov.fam.10 - pov.fam.00,
+          p.col.edu.change = p.col.edu.10 - p.col.edu.00,
+          p.rent.change = p.rent.10 - p.rent.00)
+
+# Keep only variables we need
+d <-           
+  d %>%
+  select( c( "tractid", "city",
+          "mhv.00", "mhv.10", "mhv.change", "mhv.growth", 
+          "p.white.00", "p.black.00", "p.hisp.00", "p.asian.00", "p.native.00", "p.white.10", 
+          "p.black.10", "p.hisp.10", "p.asian.10", "p.native.10", "p.color.00", "p.color.10",
+          "p.col.edu.00", "p.col.edu.10", "pov.rate.00","pov.rate.10","pov.fam.00", "pov.fam.10", 
+          "p.rent.00", "p.rent.10", "pay.00", "pay.10",
+          "pop.total.00", "pop.total.10", "pop.growth", "pay.change", "p.color.change",
+          "pov.change", "pov.fam.change", "p.col.edu.change", "p.rent.change"
+          ) ) 
+
+# Create Dataset Backup
+d.full <- d
+d <- d.full
+```
+
+# Descriptive Statistics for Home Value
+
+The descriptive statistics give an overvew of Home Value in 2000 and 2010, the change in Median Home Value, and the growth in Median Home Value within the City of Chandler. 
+
+```{r,}
+df <- data.frame( MedianHomeValue2000=mhv.00, 
+                  MedianHomeValue2010=mhv.10, 
+                  MHV.Change.00.to.10=mhv.change,
+                  MHV.Growth.00.to.12=mhv.growth )
+
+stargazer( df, 
+           type="text", 
+           digits=0, 
+           summary.stat = c("min", "p25","median","mean","p75","max") )
+```
+
+## Median Home Value ($) Comparison
+
+The average change in Home Value was $55,997, while the Median was $38,980.
+
+```{r}
+hist( mhv.change/1000, breaks=10, 
+      xlim=c(-100,300), yaxt="n", xaxt="n",
+      xlab="Thousand of US Dollars (adjusted to 2010)", cex.lab=1.5,
+      ylab="", main="Change in Median Home Value 2000 to 2010",
+      col="gray20", border="white" )
+
+axis( side=1, at=seq( from=-100, to=300, by=100 ), 
+      labels=paste0( "$", seq( from=-100, to=300, by=100 ), "k" ) )
+        
+mean.x <- mean( mhv.change/1000, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=200, y=10, 
+      labels=paste0( "Mean = ", dollar( round(1000*mean.x,0)) ), 
+      col="darkorange", cex=1.8, pos=3 )
+
+median.x <- median( mhv.change/1000, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=200, y=12, 
+      labels=paste0( "Median = ", dollar( round(1000*median.x,0)) ), 
+      col="dodgerblue", cex=1.8, pos=3 )
+```
+
+## Median Home Value (%) Comparison
+
+The average % change in Median Home Value was 26%, while the Median was 19%.
+
+```{r}
+hg <-
+hist( mhv.growth, breaks=10, 
+      xlim=c(-50,125), yaxt="n", xaxt="n",
+      xlab="", cex.main=1.5,
+      ylab="", main="Growth in Home Value by Census Tract 2000 to 2010",
+      col="gray20", border="white" )
+
+axis( side=1, at=seq( from=-50, to=125, by=25 ), 
+      labels=paste0( seq( from=-50, to=125, by=25 ), "%" ) )
+        
+mean.x <- mean( mhv.growth, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=60, y=(10), 
+      labels=paste0( "Mean = ", round(mean.x,0), "%"), 
+      col="darkorange", cex=1.8, pos=4 )
+
+median.x <- median( mhv.growth, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=60, y=(12), 
+      labels=paste0( "Median = ", round(median.x,0), "%"), 
+      col="dodgerblue", cex=1.8, pos=4 )
+```
+
+# Change in Neighborhood Metrics 
+
+**Research defines gentrification using the following metrics to determine vulnerability:**
+
+- **Education Level:** We look for neighborhoods that show a decrease in uneducated people as a signal for gentrification.
+
+- **Poverty Rate:** We look at neighborhoods that show a decrease in poverty in the ten year span as an indicator for gentrification.
+
+- **Poverty Rate for Families with Children:** We look at neighborhoods that show a decrease in poverty for families with children in the ten year span as an indicator for gentrification.
+
+- **Proportion Renters:** We look at tracts that have a decrease in renters, signifying that wealthier individuals are moving in and buying property rather than renting, showing gentrification.
+
+- **Proportion of Color:** We look at tracts that have a decrease in minority population, signifying that white individuals are moving in and displacing minority individuals. 
+
+# Descriptive Statistics for Neighborhood Metrics
+
+The descriptive statistics give an overvew of the above Neighborhood Metrics, showing the values in 2000 and 2010 within the City of Chandler. 
+
+```{r}
+df <- data.frame( Pct.College.Educated.00=d$p.col.edu.00/100,
+                  Pct.College.Educated.10=d$p.col.edu.10/100,
+                  Poverty.Rate.00=d$pov.rate.00/100,
+                  Poverty.Rate.10=d$pov.rate.10/100,
+                  Pov.Fam.Rate.00=d$pov.fam.00/100,
+                  Pov.Fam.Rate.10=d$pov.fam.10/100,
+                  Pct.Renters.00=d$p.rent.00/100,
+                  Pct.Renters.10=d$p.rent.10/100,
+                  Pct.Color.00=d$p.color.00/100,
+                  Pct.Color.10=d$p.color.10/100,
+                  Income.00=d$pay.00,
+                  Income.10=d$pay.10
+                  )
+
+stargazer( df, 
+           type="text", 
+           digits=2, 
+           summary.stat = c("min", "p25","median","mean","p75","max") )
+```
+
+## Education Level Comparison
+
+The average % change in College Educated Residents was 9%, while the median was 5%.
+
+```{r}
+hist( d$p.col.edu.change, breaks=10, 
+      xlim=c(-25,50), yaxt="n", xaxt="n",
+      xlab="Change in Propotion (%)", cex.lab=1.5,
+      ylab="", main="Change in College Educated Residents (%) 2000 to 2010",
+      col="gray40", border="white" )
+
+axis( side=1, at=seq( from= -25, to=50, by=5 ), 
+      labels=paste0( seq( from= -25, to= 50, by=5 )) )
+        
+mean.x <- mean( d$p.col.edu.change, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=30, y=10, 
+      labels=paste0( "Mean = ", round(mean.x,0), "%" ), 
+      col="darkorange", cex=1.8, pos=3 )
+
+median.x <- median( d$p.col.edu.change, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=30, y=12, 
+      labels=paste0( "Median = ",  round(median.x,0), "%" ), 
+      col="dodgerblue", cex=1.8, pos=3 )
+```
+
+## Poverty Rate Comparison
+          
+The average % change in Poverty Rate was 3%, while the median was 2%.
+
+```{r}
+hist( d$pov.change, breaks=20, 
+      xlim=c(-15,25), yaxt="n", xaxt="n",
+      xlab="Change in Rate (%)", cex.lab=1.5,
+      ylab="", main="Change in Poverty Rate (%) 2000 to 2010",
+      col="gray40", border="white" )
+
+axis( side=1, at=seq( from= -15, to=25, by=5 ), 
+      labels=paste0( seq( from= -15, to= 25, by=5 )) )
+        
+mean.x <- mean( d$pov.change, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=20, y=10, 
+      labels=paste0( "Mean = ", round(mean.x,0), "%" ), 
+      col="darkorange", cex=1.8, pos=3 )
+
+median.x <- median( d$pov.change, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=20, y=12, 
+      labels=paste0( "Median = ",  round(median.x,0), "%" ), 
+      col="dodgerblue", cex=1.8, pos=3 )
+```
+
+## Poverty Rate for Families with Children Comparison
+          
+The average % change in Poverty Rate for Families was 2% while the median change was 1%.
+
+```{r}
+hist( d$pov.fam.change, breaks=25, 
+      xlim=c(-10,20), yaxt="n", xaxt="n",
+      xlab="Change in Rate (%)", cex.lab=1.5,
+      ylab="", main="Change in Poverty Rate for Families (%) 2000 to 2010",
+      col="gray40", border="white" )
+
+axis( side=1, at=seq( from= -10, to=20, by=5 ), 
+      labels=paste0( seq( from= -10, to= 20, by=5 )) )
+        
+mean.x <- mean( d$pov.fam.change, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=15, y=5, 
+      labels=paste0( "Mean = ", round(mean.x,0), "%" ), 
+      col="darkorange", cex=1.8, pos=3 )
+
+median.x <- median( d$pov.fam.change, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=15, y=7, 
+      labels=paste0( "Median = ",  round(median.x,0), "%" ), 
+      col="dodgerblue", cex=1.8, pos=3 )
+```
+
+## Proportion Renters Comparison
+
+The average % change in Proportion of Renters was 9% and the median change was 8%.
+
+```{r}
+hist( d$p.rent.change, breaks=20, 
+      xlim=c(-10,40), yaxt="n", xaxt="n",
+      xlab="Change in Proportion (%)", cex.lab=1.5,
+      ylab="", main="Change in Renting Residents (%) 2000 to 2010",
+      col="gray40", border="white" )
+
+axis( side=1, at=seq( from= -10, to=40, by=5 ), 
+      labels=paste0( seq( from= -10, to= 40, by=5 )) )
+        
+mean.x <- mean( d$p.rent.change, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=25, y=10, 
+      labels=paste0( "Mean = ", round(mean.x,0), "%" ), 
+      col="darkorange", cex=1.8, pos=3 )
+
+median.x <- median( d$p.rent.change, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=25, y=12, 
+      labels=paste0( "Median = ",  round(median.x,0), "%" ), 
+      col="dodgerblue", cex=1.8, pos=3 )
+```
+
+## Proportion Minority Comparison
+
+The average % change in minority population was 8% and the median change was also 8%.
+
+```{r}
+hist( d$p.color.change, breaks=20, 
+      xlim=c(-10,40), yaxt="n", xaxt="n",
+      xlab="Change in Proportion (%)", cex.lab=1.5,
+      ylab="", main="Change in Minority Residents (%) 2000 to 2010",
+      col="gray40", border="white" )
+
+axis( side=1, at=seq( from= -10, to=40, by=5 ), 
+      labels=paste0( seq( from= -10, to= 40, by=5 )) )
+        
+mean.x <- mean( d$p.color.change, na.rm=T )
+abline( v=mean.x, col="darkorange", lwd=2, lty=2 )
+text( x=25, y=9, 
+      labels=paste0( "Mean = ", round(mean.x,0), "%" ), 
+      col="darkorange", cex=1.8, pos=3 )
+
+median.x <- median( d$p.color.change, na.rm=T )
+abline( v=median.x, col="dodgerblue", lwd=2, lty=2 )
+text( x=25, y=11, 
+      labels=paste0( "Median = ",  round(median.x,0), "%" ), 
+      col="dodgerblue", cex=1.8, pos=3 )
+```
+
+# Mapping of Chandler, AZ
+
+Visualizing the different factors in Chandler gives us a viewpoint for the changes happening throughout the City. 
+
+To view the mapping, we must first upload a mapping package and merge with the Chandler data. 
+
+```{r}
+# we have Maricopa County already packaged and on GitHub for easy load: 
+github.url <- "https://raw.githubusercontent.com/DS4PS/cpp-529-master/master/data/phx_dorling.geojson"
+phx <- geojson_read( x=github.url,  what="sp" )
+```
+
+```{r}
+data_map <- d
+# create small dataframe for the merge
+df1 <- data.frame( data_map )
+
+# create GEOID that matches GIS format
+
+# create a geoID for merging by tract 
+df1$GEOID <- substr( df1$tractid, 6, 18 )  # extract codes
+df1$GEOID <- gsub( "-", "", df1$GEOID )    # remove hyphens
+
+chandlermap <- merge( phx, df1, by.x="GEOID", by.y="GEOID" )
+```
+
+The maps explore Median Home Value Percent Change, College Educated Percent Change, Poverty Rate Percent Change, Poverty for Families Percent Change, Percent Renters Change, and Percent Minority Change. The maps visually show a correlation as we would expect. Where home growth increases, education increases, poverty and family poverty decrease as well as renters decrease. Simulatenously, the opposite is true - where home growth decreases, education decreases, poverty and family poverty increase as well as renters increase.
+
+```{r}
+chandlermap <- spTransform( chandlermap, CRS("+init=epsg:3395") )
+
+bb <- st_bbox( c( xmin = -12470000, xmax = -12431368, 
+                 ymax = 3925924, ymin = 3880074 ), 
+               crs = st_crs("+init=epsg:3395")) 
+
+chandlermap1 <-
+  tm_shape( chandlermap, bbox=bb ) + 
+  tm_polygons( col=c("mhv.growth","p.col.edu.change", 
+                     "pov.change","pov.fam.change",
+                     "p.rent.change", "p.color.change"),
+               n=6, ncol=2, style="quantile", palette="Spectral" ) +
+  tm_layout( "Dorling Cartogram", title.position=c("right","top"), legend.position = c("left", "bottom") )
+
+chandlermap1
+```
