@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Supplimental Resources
+title: Supplemental Resources
 ---
 
 ## Data Resources
