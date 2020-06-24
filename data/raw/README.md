@@ -23,5 +23,7 @@ The data-raw file is a collection of raw .csv files containing LTDB data used in
 2010 variables from the full census (full)
 2010 variables from the census global nighborhood county dataset
 cbsa-crosswalk.rds
+Chandler Census Tracts
+Chandler Community Land Trusts by Census Tract
 
 ## README.md (This document)
