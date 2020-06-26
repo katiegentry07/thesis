@@ -18,12 +18,12 @@ description: Investigating the effects of Community Land Trusts on the slowing o
 # --- Navigation bar options --- #
 
 # List of links in the navigation bar
-navbar-links:
+navbar-links: 
   Executive Summary: "executivesummary"
   Neighborhood Change: "neighborhoodchange"
   Evaluation of Tax Credits: "gentrificationandclt"
   Results & Conclusion: "results"
-  Supplemental Resources: "resources"
+  Supplemental Resources: "resources" 
     - Longitudinal Tract Data Base: "https://s4.ad.brown.edu/projects/diversity/Researcher/Bridging.htm"
     - Data Codebook: "/files/LTBD-codebook.pdf"
     - Gentrification in America: "/files/gentrification-in-america-report.pdf"
