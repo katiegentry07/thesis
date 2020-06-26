@@ -1,10 +1,10 @@
 # --- General options --- #
 
 # Name of website
-title: Group 1 Final Project
+title: Thesis
 
 # Short description of your site
-description: Overview
+description: Investigating the effects of Community Land Trusts on the slowing of gentrification in Chandler, Arizona. 
 # --- Local development options ---
 # If your website is hosted locally rather than on GitHub, then you need to uncomment the next two parameters to set the url and baseurl
 # *** If you're not sure what this mean, then leave this section as it is. Only modify the url and baseurl if you know what you're doing!***
@@ -21,15 +21,15 @@ description: Overview
 navbar-links:
   Executive Summary: "executivesummary"
   Neighborhood Change: "neighborhoodchange"
-  Evaluation of Tax Credits: "evaluationoftaxcredits"
+  Evaluation of Tax Credits: "gentrificationandclt"
   Results & Conclusion: "results"
-  Supplemental Resources:
+  Supplemental Resources: "resources"
     - Longitudinal Tract Data Base: "https://s4.ad.brown.edu/projects/diversity/Researcher/Bridging.htm"
     - Data Codebook: "/files/LTBD-codebook.pdf"
-    - Anerican Gentrification: "/files/gentrification-in-america-report.pdf"
+    - Gentrification in America: "/files/gentrification-in-america-report.pdf"
     - Gentrification Methodology: "/files/gentrification-methodology.pdf"
     - Displacement or Gentrification: "/files/displacement-or-succession.pdf"
-  About the Team: "aboutme"
+  About Me: "aboutme"
 
 # Image to show in the navigation bar - image must be a square (width = height)
 # Remove this parameter if you don't want an image in the navbar
@@ -44,7 +44,7 @@ navbar-links:
 # Personalize the colors in your website. Colour values can be any valid CSS colour
 
 navbar-col: "#F5F5F5"
-navbar-text-col: "##3498DB"
+navbar-text-col: "#3498DB"
 navbar-children-col: "#34495E"
 page-col: "#F8F9F9"
 link-col: "#008AFF"
@@ -72,15 +72,10 @@ author:
 # You can reorder the items to define the link order.
 # If you want to add a new link that isn't here, you'll need to also edit the file _data/SocialNetworks.yml
 social-network-links:
-#  rss: false
-#  email: "Ricky.Duran@asu.edu"
-#  facebook: rickyduraniii
-#  github: RickyDuran
-#  linkedin: rickyduraniii
-#  github: Vodkard
-#  linkedin: rickyduraniii
+#  rss: true
+#  email: "kgentry4@asu.edu"
 #  github: katiegentry07
-#  linkedin: rickyduraniii
+#  linkedin: katiegentry
 #  twitter: daattali
 #  reddit: yourname
 #  linkedin: rickyduraniii
