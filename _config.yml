@@ -21,7 +21,7 @@ description: Investigating the effects of Community Land Trusts on the slowing o
 navbar-links:
   Executive Summary: "executivesummary"
   Neighborhood Change: "neighborhoodchange"
-  Evaluation of Tax Credits: "evaluationoftaxcredits"
+  Gentrification: "evaluationoftaxcredits"
   Results & Conclusion: "results"
   Supplemental Resources:
     - Longitudinal Tract Data Base: "https://s4.ad.brown.edu/projects/diversity/Researcher/Bridging.htm"
@@ -29,7 +29,7 @@ navbar-links:
     - Anerican Gentrification: "/files/gentrification-in-america-report.pdf"
     - Gentrification Methodology: "/files/gentrification-methodology.pdf"
     - Displacement or Gentrification: "/files/displacement-or-succession.pdf"
-  About the Team: "aboutme"
+  About Me: "aboutme"
 
 # Image to show in the navigation bar - image must be a square (width = height)
 # Remove this parameter if you don't want an image in the navbar
