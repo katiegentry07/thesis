@@ -23,7 +23,7 @@ navbar-links:
   Neighborhood Change: "neighborhoodchange"
   Gentrification: "evaluationoftaxcredits"
   Results & Conclusion: "results"
-  Supplemental Resources:
+  Supplemental Resources: "resources"
     - Longitudinal Tract Data Base: "https://s4.ad.brown.edu/projects/diversity/Researcher/Bridging.htm"
     - Data Codebook: "/files/LTDB-codebook.pdf"
     - Anerican Gentrification: "/files/gentrification-in-america-report.pdf"
