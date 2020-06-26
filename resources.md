@@ -17,8 +17,6 @@ Resource for understanding the variables within the LTDB.
 
 #### [Gentrification Overview](https://www.youtube.com/watch?v=V0zAvlmzDFc)
 
-## Additional Resources
-
 #### [Gentrification In America](/files/gentrification-in-america-report.pdf)
 
 #### [Gentrification Methedology](/files/gentrification-methodology.pdf)
