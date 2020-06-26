@@ -24,11 +24,6 @@ navbar-links:
   Gentrification: "evaluationoftaxcredits"
   Results & Conclusion: "results"
   Supplemental Resources: "resources"
-    - Longitudinal Tract Data Base: "https://s4.ad.brown.edu/projects/diversity/Researcher/Bridging.htm"
-    - Data Codebook: "/files/LTDB-codebook.pdf"
-    - Anerican Gentrification: "/files/gentrification-in-america-report.pdf"
-    - Gentrification Methodology: "/files/gentrification-methodology.pdf"
-    - Displacement or Gentrification: "/files/displacement-or-succession.pdf"
   About Me: "aboutme"
 
 # Image to show in the navigation bar - image must be a square (width = height)
