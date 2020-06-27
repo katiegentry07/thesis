@@ -51,8 +51,8 @@ footer-link-col: "#CC0033"
 # Alternatively, the navbar, footer, and page background can be set to use background images
 # instead of colour
 
-navbar-img: "/img/interconnectedness-header.png"
-footer-img: "/img/interconnectedness-header.png"
+navbar-img: "/img/city-landscape.jpg"
+footer-img: "/img/city-landscape.jpg"
 # page-img: "https://ricardoduraniii.files.wordpress.com/2017/10/cropped-img_20171019_085648249.jpg"
 
 # --- Footer options --- #
