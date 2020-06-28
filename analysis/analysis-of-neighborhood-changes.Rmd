@@ -198,7 +198,7 @@ df <- data.frame( MedianHomeValue2000=mhv.00,
                   MHV.Growth.00.to.12=mhv.growth )
 
 stargazer( df, 
-           type="text", 
+           type="html", 
            digits=0, 
            summary.stat = c("min", "p25","median","mean","p75","max") )
 ```
@@ -292,7 +292,7 @@ df <- data.frame( Pct.College.Educated.00=d$p.col.edu.00/100,
                   )
 
 stargazer( df, 
-           type="text", 
+           type="html", 
            digits=2, 
            summary.stat = c("min", "p25","median","mean","p75","max") )
 ```

@@ -56,9 +56,7 @@ d <- merge( d, md, by="tractid" )
 
 d <- merge( d, city, by="tractid")
 d$id2 <- gsub( "[^0-9]", "", d$tractid )
-```
 
-```{r}
 # adjust 2000 home values for inflation 
 mhv.00 <- d$mhmval00 * 1.28855  
 mhv.10 <- d$mhmval12
@@ -76,9 +74,7 @@ d$mhv.00 <- mhv.00
 d$mhv.10 <- mhv.10
 d$mhv.change <- mhv.change
 d$mhv.growth <- mhv.growth
-```
 
-```{r}
 # Calculating new proportion variables from existing variables.
 d <- 
   d %>%
@@ -110,9 +106,7 @@ d <-
           pov.rate.10 = 100 * npov12 / dpov12,
           pov.fam.10 = 100 * nfmpov12 / dfmpov12, 
           p.rent.10 = 100 * rent10 / hu10 )
-```
 
-```{r}
 # Calculate new variables using percentages created above
 d <-
   d %>%
@@ -158,11 +152,11 @@ Next, we need to establish which factors signify whether a neighborhood has been
 
 - **Less Uneducated:** We look for neighborhoods that show a decrease in uneducated people as a signal for gentrification.
 
-- ***Less Poverty:*** We look at neighborhoods that show a decrease in poverty in the ten year span as an indicator for gentrification.
+- **Less Poverty:** We look at neighborhoods that show a decrease in poverty in the ten year span as an indicator for gentrification.
 
 - **Less Poverty for Families with Children:** We look at neighborhoods that show a decrease in family poverty in the ten year span as an indicator for gentrification.
 
-- ***Less Renters:*** We look at tracts that have a decrease in renters, singifying that people are more likely moving into housing units instead, showing possible gentrification.
+- **Less Renters:** We look at tracts that have a decrease in renters, singifying that people are more likely moving into housing units instead, showing possible gentrification.
 
 - **Less Minority:** We look at tracts that have a decrease in minority population, signifying that white individuals are moving in and displacing minority individuals. 
 
@@ -201,7 +195,7 @@ lower.income <- d$pay.00 > d$pay.10
 
 g.flag <- lower.income & less.educated & more.poverty & more.fam.poverty & more.renters & more.minority
 
-# Create subsets of the candidates and the gnetrified tracts
+# Create subsets of the candidates and the gentrified tracts
 d_candidates <- d[lower.income,]
 d_nogentrified <- d[g.flag,]
 d_nogentrified <- na.omit(d_nogentrified)
@@ -213,6 +207,8 @@ num.nogentrified <- sum( g.flag, na.rm=T )
 
 # Demographics of the Candidate and Gentrified Neighborhoods
 
+### Candidate Neighborhoods
+
 Looking at a summary of the candidates for gentrification below, we can see the overall demographics of the neighborhoods. We see a high percentage of individuals who are white that decreases from 2000 to 2010, an increase in education, an increase in renters, and a decrease in pay. 
 
 ```{r, results="asis"}
@@ -223,6 +219,8 @@ stargazer( d_candidates,
            summary.stat = c("min", "p25","median","mean","p75","max") )
 ```
 
+### Non-Gentrified Neighborhoods
+
 Looking at a summary of the neighborhoods that did not gentrify below, we can see the comparison to the candidate demographics. We see a higher percentage of minority change, higher rate of poverty, higher rate of family poverty, less education, and more renters - all indicators of gentrification not happening. 
 
 ```{r, results="asis"}
@@ -232,6 +230,7 @@ stargazer( d_nogentrified,
            digits=0, 
            summary.stat = c("min", "p25","median","mean","p75","max") )
 ```
+
 
 There were 39 neighborhoods that were candidates for gentrification. Of these, 11 did not gentrify (approximately 28%). 
 
@@ -250,6 +249,20 @@ clt <- readRDS( here("/data/rodeo/Chandler_Community_Land_Trusts_by_Census_Tract
 
 d_clt <- merge( d, clt, by="tractid", all=TRUE, na.omit=TRUE)
 d$id2 <- gsub( "[^0-9]", "", d$tractid )
+```
+
+### Community Land Trust tracts
+
+Looking at a summart of the tracts that contain Community Land Trust homes below, we can see the overall demographics of the neighborhoods. We see a XXX. 
+
+```{r, results="asis"}
+d_clt <- filter(d_clt, Number.CLT.Houses > 0)
+
+d_nogentrified <- data.frame(d_nogentrified)
+stargazer( d_nogentrified, 
+           type="html", 
+           digits=0, 
+           summary.stat = c("min", "p25","median","mean","p75","max") )
 ```
 
 Of the 19 census tracts that contain Community Land Trust homes, 6 of the tracts were also identified as tracts that did not gentrify. Comparatively, 5 of the tracts that did not contain Community Land Trust homes did not gentrify. 
