@@ -253,25 +253,33 @@ d$id2 <- gsub( "[^0-9]", "", d$tractid )
 
 ### Community Land Trust tracts
 
-Looking at a summart of the tracts that contain Community Land Trust homes below, we can see the overall demographics of the neighborhoods. We see a XXX. 
+Looking at a summary of the tracts that contain Community Land Trust homes below, we can see the overall demographics of the neighborhoods. We see on average a 3% increase in educated invdividuals, a 5% increase in poverty, 4% increase in family poverty, 7% increase in renter, and a 9% increase in minorities. On average, the income from 2000 to 2010 decreases by $7,700. 
 
 ```{r, results="asis"}
 d_clt <- filter(d_clt, Number.CLT.Houses > 0)
 
 d_clt <- data.frame(d_clt)
 stargazer( d_clt, 
-           type="text", 
+           type="html", 
            digits=0, 
            summary.stat = c("min", "p25","median","mean","p75","max") )
 ```
 
-Of the 19 census tracts that contain Community Land Trust homes, 6 of the tracts were also identified as tracts that did not gentrify. Comparatively, 5 of the tracts that did not contain Community Land Trust homes did not gentrify. 
+After merging the candidate tracts with the tracts that contain Community Land Trusts, 16 of the 19 tracts were both candidate tracts and contained Community Land Trust homes. We can take a closer look at those tracts displayed below. 
+
+```{r}
+clt_candidates <- merge(clt, d_candidates, by="tractid", na.omit=TRUE)
+
+clt_candidates
+```
+
+Of the 16 census tracts that contain Community Land Trust homes and were candidates, 6 of the tracts were also identified as tracts that did not gentrify. Comparatively, 5 of the tracts that did not contain Community Land Trust homes did not gentrify. 
 
 ```{r}
 nogent_clt <- merge(clt, d_nogentrified, by="tractid", na.omit=TRUE)
 ```
 
-Comparatively to the candidate tracts, non-gentrified tracts With Community Land Trusts had slightly more poverty but less renters. The home value is slightly lower in these non-gentrified tracts, but saw similar rates of growth. The percent of minorities is relatively the same, but the percent of uneducated is higher. 
+Comparatively to the candidate tracts, non-gentrified tracts with Community Land Trusts had slightly more poverty but less renters. The home value is slightly lower in these non-gentrified tracts, but saw similar rates of growth. The percent of minorities is relatively the same, but the percent of uneducated is higher. 
 
 ```{r, results="asis"}
 d_nogent_clt <- data.frame(nogent_clt)
