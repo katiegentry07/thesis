@@ -258,9 +258,9 @@ Looking at a summart of the tracts that contain Community Land Trust homes below
 ```{r, results="asis"}
 d_clt <- filter(d_clt, Number.CLT.Houses > 0)
 
-d_nogentrified <- data.frame(d_nogentrified)
-stargazer( d_nogentrified, 
-           type="html", 
+d_clt <- data.frame(d_clt)
+stargazer( d_clt, 
+           type="text", 
            digits=0, 
            summary.stat = c("min", "p25","median","mean","p75","max") )
 ```
