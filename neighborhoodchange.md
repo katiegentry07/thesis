@@ -23,22 +23,6 @@ Neighborhood Health measures how successful a neighborhood is based on a variety
 
 Gentrification is the process of changing a neighborhood by creating more affluent neighborhoods. The process often increases the value of a neighborhood by developing or changing housing, improving resources that are available in the neighborhood, and investing more money and economic strength into the neighborhood. The benefits of gentrification often include increased infrastructure, increased economic development, lower crime rates, and overall improved housing. However, the downsides of gentrification include changing the economic make-up of a neighborhood which often includes the racial and ethnic make-up, displacement of individuals or families, and the lack of affordability that gentrification initiates. We use two different variables to identify neighborhoods that are able to gentrify. These include poverty at a higher than normal rate in urban cities and median income for metros are less than the normal rate. 
 
-### [Descriptive Analysis of Neighborhood Change](/report-templates/2b-descriptive-analysis-of-neighborhood-change.html){:target="_blank"}
+### [Descriptive Analysis of Neighborhood Change](/report-templates/analysis-of-neighborhood-changes.html){:target="_blank"}
 
-### [Predicting Change Based on 2000 Neighborhood Characteristics](report-templates/2c-predicting-change.html){:target="_blank"}
-
-### References
-
-Healthy Places. (n.d.). Retrieved from https://www.cdc.gov/healthyplaces/healthtopics/gentrification.htm
-
-Median Price. (n.d.). Retrieved from https://www.bankrate.com/glossary/m/median-price/
-
-US Census Bureau. (2019, September 26). American Community Survey Data. Retrieved from https://www.census.gov/programs-surveys/acs/data.html
-
--------
-<br>
-
-Analysis Created By: Group 1: Ricky Duran, Jason Eastman, & Katie Gentry
-For: CPP 528 - Data Sciences for Public Service III (Spring 2020)
-
-<br>
+</br>
