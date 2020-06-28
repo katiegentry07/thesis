@@ -25,25 +25,4 @@ Without the incentive, often affordable housing would not be built as there is n
 
 The data used for the analysis comes from the Census Longitudinal Tabulated Database 2000 and 2010 as well as the metadata, the New Market Tax Credit Summary Report which includes the New Market Tax Credit Public Data from 2003 to 2017, and the Low Income Housing Tax Credit database which includes data from 1987 to 2017. 
 
-### [Descriptive Statistics](/report-templates/3b-descriptive-Statistics.html){:target="_blank"}
-
-### [Predictive Analysis](/report-templates/3c-predictive-analysis.html){:target="_blank"}
-
-### References
-
-About the LIHTC. (2016, March 11). Retrieved from https://www.novoco.com/resource-centers/affordable-housing-tax-credits/lihtc-basics/about-lihtc
-
-New Market Tax Credit Program. (n.d.). Retrieved from https://www.cdfifund.gov/programs-training/Programs/new-markets-tax-credit/Pages/default.aspx
-
-What is the Low-Income Housing Tax Credit and how does it work? (n.d.). Retrieved from https://www.taxpolicycenter.org/briefing-book/what-low-income-housing-tax-credit-and-how-does-it-work
-
-What is the New markets Tax Credit, and how does it work? (n.d.). Retrieved from https://www.taxpolicycenter.org/briefing-book/what-new-markets-tax-credit-and-how-does-it-work
-
-
--------
-<br>
-
-Analysis Created By: Group 1: Ricky Duran, Jason Eastman, & Katie Gentry
-For: CPP 528 - Data Sciences for Public Service III (Spring 2020)
-
-<br>
+### [Community Land Trusts and Gentrification](/report-templates/gentrification-and-community-land-trusts.html){:target="_blank"}
