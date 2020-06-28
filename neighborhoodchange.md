@@ -25,4 +25,4 @@ Gentrification is the process of changing a neighborhood by creating more afflue
 
 ### [Descriptive Analysis of Neighborhood Change](/report-templates/analysis-of-neighborhood-changes.html){:target="_blank"}
 
-</br>
+
