@@ -8,8 +8,8 @@ The data folder contains a series of folders including raw, wrangling, and rodeo
 
 ## Contents:
 
-raw folder
-rodeo folder
-wrangling folder
+raw folder  
+rodeo folder  
+wrangling folder  
 
 ## README.md (This document)
