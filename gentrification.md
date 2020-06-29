@@ -17,4 +17,4 @@ In Chandler, the Community Land Trust is maintained by Newtown Community Develop
 
 The data used for the analysis comes from the Census Longitudinal Tabulated Database 2000 and 2010 as well as the metadata and Chandler's Community Land Trust data. 
 
-### [Community Land Trusts and Gentrification](/report-templates/gentrification-and-community-land-trusts.html){:target="_blank"}
+### [Gentrification and Community Land Trusts](/report-templates/gentrification-and-community-land-trusts.html){:target="_blank"}
