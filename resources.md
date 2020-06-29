@@ -16,10 +16,16 @@ title: Supplemental Resources
 
 #### [Displacement or Gentrification](/files/displacement-or-succession.pdf)
 
+#### [Community Land Trusts Slow Gentrification](/files/CLT-slow-gentrification.pdf)
+
 
 ## Reports
 
 #### [Gentrification Methedology](/files/gentrification-methodology.pdf)
+
+#### [Chandler's Community Needs Assessment](https://www.chandleraz.gov/sites/default/files/City-of-Chandler-2019-REPORT-Community-Needs-Assessment-Executive-Summary-09.12.19.pdf)
+
+#### [Community Land Trust History](https://community-wealth.org/sites/clone.community-wealth.org/files/downloads/report-davis14.pdf)
 
 
 ## Data
