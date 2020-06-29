@@ -289,6 +289,25 @@ stargazer( d_nogent_clt,
            summary.stat = c("min", "p25","median","mean","p75","max") )
 ```
 
+Comparatively to the candidate tracts, non-gentrified tracts with Community Land Trusts had slightly more poverty but less renters. The home value is slightly lower in these non-gentrified tracts, but saw similar rates of growth. The percent of minorities is relatively the same, but the percent of uneducated is higher. 
+
+# Non-gentrified, non-Community Land Trust Tracts
+
+We can evaluate the non-gentrified tracts without Community Land Trusts to the non-gentrified tracts with Community Land Trusts to see the impact of the Community Land Trusts in part. The home value change is higher in these non-gentrified tracts as well as the home growth. The poverty rate, family poverty rate, and education are all lower than tracts with Community Land Trusts. However, the proportion of renters and minorities are higher.   
+
+```{r}
+d_nogent_noclt <- anti_join(d_nogentrified, nogent_clt, by= "tractid")
+```
+
+
+```{r, results="asis"}
+d_nogent_noclt <- data.frame(d_nogent_noclt)
+stargazer( d_nogent_noclt, 
+           type="html", 
+           digits=0, 
+           summary.stat = c("min", "p25","median","mean","p75","max") )
+```
+
 # Mapping of Non-Gentrified Tracts, Community Land Trust Tracts, and the Overlap
 
 To view the mapping, we must first upload a mapping package and merge with the selected Chandler data. To see the comparison, we can map the tracts that contain Community Land Trust homes, the non-gentrified tracts, and where the two overlap - the non-gentrified tracts that contain Community Land Trust homes. 
